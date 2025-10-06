@@ -1,0 +1,29 @@
+ALTER TABLE `products` ADD `model` varchar(128);--> statement-breakpoint
+ALTER TABLE `products` ADD `sku` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `gpu` varchar(128);--> statement-breakpoint
+ALTER TABLE `products` ADD `display_size_inches` decimal(4,1);--> statement-breakpoint
+ALTER TABLE `products` ADD `display_resolution` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `display_panel` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `display_refresh_hz` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `brightness_nits` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `cosmetic_notes` text;--> statement-breakpoint
+ALTER TABLE `products` ADD `functional_notes` text;--> statement-breakpoint
+ALTER TABLE `products` ADD `battery_health_pct` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `battery_cycles` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `ports` text;--> statement-breakpoint
+ALTER TABLE `products` ADD `os` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `keyboard_layout` varchar(32);--> statement-breakpoint
+ALTER TABLE `products` ADD `color` varchar(32);--> statement-breakpoint
+ALTER TABLE `products` ADD `weight_kg` decimal(5,2);--> statement-breakpoint
+ALTER TABLE `products` ADD `dimensions_mm` varchar(64);--> statement-breakpoint
+ALTER TABLE `products` ADD `mrp` decimal(10,2);--> statement-breakpoint
+ALTER TABLE `products` ADD `gst_percent` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `discount_percent` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `stock_qty` int DEFAULT 0;--> statement-breakpoint
+ALTER TABLE `products` ADD `warranty_months` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `return_window_days` int;--> statement-breakpoint
+ALTER TABLE `products` ADD `fulfillment_location` varchar(128);--> statement-breakpoint
+ALTER TABLE `products` ADD `highlights` text;--> statement-breakpoint
+ALTER TABLE `products` ADD `meta_title` varchar(255);--> statement-breakpoint
+ALTER TABLE `products` ADD `meta_description` varchar(255);--> statement-breakpoint
+ALTER TABLE `products` ADD `meta_keywords` varchar(255);
