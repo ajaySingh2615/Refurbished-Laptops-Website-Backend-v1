@@ -1,6 +1,6 @@
 import { db } from "../db/client.js";
 import { products } from "../db/schema.js";
-import { eq, like, and, or, gte, lte, desc } from "drizzle-orm";
+import { eq, like, and, or, gte, lte, inArray } from "drizzle-orm";
 
 export const getAllProducts = async (req, res) => {
   try {
@@ -78,22 +78,86 @@ export const searchProducts = async (req, res) => {
 
 export const filterProducts = async (req, res) => {
   try {
-    const { brand, condition, minPrice, maxPrice, ramGb, storage } = req.query;
-    let conditions = [];
+    const {
+      brand,
+      condition,
+      minPrice,
+      maxPrice,
+      ramGb,
+      storage,
+      inStock,
+      sortBy,
+      sortOrder,
+      page = 1,
+      limit = 12,
+    } = req.query;
 
-    if (brand) conditions.push(eq(products.brand, brand));
-    if (condition) conditions.push(eq(products.condition, condition));
-    if (minPrice) conditions.push(gte(products.price, minPrice));
-    if (maxPrice) conditions.push(lte(products.price, maxPrice));
-    if (ramGb) conditions.push(eq(products.ramGb, parseInt(ramGb)));
-    if (storage) conditions.push(like(products.storage, `%${storage}%`));
+    const toList = (v) =>
+      String(v)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    const where = [];
+
+    if (brand) {
+      const list = toList(brand);
+      where.push(
+        list.length > 1
+          ? inArray(products.brand, list)
+          : eq(products.brand, list[0])
+      );
+    }
+    if (condition) {
+      const list = toList(condition);
+      where.push(
+        list.length > 1
+          ? inArray(products.condition, list)
+          : eq(products.condition, list[0])
+      );
+    }
+    if (typeof inStock !== "undefined") {
+      where.push(eq(products.inStock, String(inStock) === "true"));
+    }
+    if (minPrice) where.push(gte(products.price, Number(minPrice)));
+    if (maxPrice) where.push(lte(products.price, Number(maxPrice)));
+    if (ramGb) {
+      const list = toList(ramGb)
+        .map((n) => parseInt(n, 10))
+        .filter((n) => !Number.isNaN(n));
+      if (list.length === 1) {
+        where.push(eq(products.ramGb, list[0]));
+      } else if (list.length > 1) {
+        where.push(inArray(products.ramGb, list));
+      }
+    }
+    if (storage) {
+      const list = toList(storage);
+      // Match storage type token inside description (e.g., "512GB SSD" should match "SSD")
+      if (list.length === 1) {
+        where.push(like(products.storage, `%${list[0]}%`));
+      } else if (list.length > 1) {
+        const likes = list.map((t) => like(products.storage, `%${t}%`));
+        where.push(or(...likes));
+      }
+    }
+
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, parseInt(String(limit), 10) || 12);
+    const offset = (pageNum - 1) * limitNum;
 
     const filteredProducts = await db
       .select()
       .from(products)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(where.length > 0 ? and(...where) : undefined)
+      .limit(limitNum)
+      .offset(offset);
 
-    res.json({ products: filteredProducts, filter: req.query });
+    res.json({
+      products: filteredProducts,
+      filters: req.query,
+      pagination: { page: pageNum, limit: limitNum },
+    });
   } catch (error) {
     console.error("Error filtering products:", error);
     res.status(500).json({ message: "Filtering failed" });
