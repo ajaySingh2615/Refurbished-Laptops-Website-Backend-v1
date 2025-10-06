@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
-import { db } from "./db/client";
+import productRoutes from "./routes/products.js";
+import brandRoutes from "./routes/brands.js";
 
 const app = express();
 
@@ -13,5 +14,9 @@ app.get("/health", (req, res) => {
     .status(200)
     .json({ ok: true, service: "backend", time: new Date().toISOString() });
 });
+
+// API routes
+app.use("/api/products", productRoutes);
+app.use("/api/brands", brandRoutes);
 
 export default app;
