@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { db } from "./db/client";
 
 const app = express();
 
