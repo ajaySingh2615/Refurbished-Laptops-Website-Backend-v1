@@ -1,6 +1,6 @@
 import { db } from "../db/client.js";
 import { products } from "../db/schema.js";
-import { eq, like, and, or, gte, lte, inArray } from "drizzle-orm";
+import { eq, like, and, or, gte, lte, inArray, sql } from "drizzle-orm";
 
 export const getAllProducts = async (req, res) => {
   try {
@@ -14,15 +14,17 @@ export const getAllProducts = async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    const totalCount = await db.select({ count: products.id }).from(products);
+    const [{ total }] = await db
+      .select({ total: sql`count(*)`.mapWith(Number) })
+      .from(products);
 
     res.json({
       products: allProducts,
       pagination: {
         page,
         limit,
-        total: totalCount.length,
-        totalPages: Math.ceil(totalCount.length / limit),
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
@@ -153,10 +155,20 @@ export const filterProducts = async (req, res) => {
       .limit(limitNum)
       .offset(offset);
 
+    const [{ total }] = await db
+      .select({ total: sql`count(*)`.mapWith(Number) })
+      .from(products)
+      .where(where.length > 0 ? and(...where) : undefined);
+
     res.json({
       products: filteredProducts,
       filters: req.query,
-      pagination: { page: pageNum, limit: limitNum },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
     });
   } catch (error) {
     console.error("Error filtering products:", error);
