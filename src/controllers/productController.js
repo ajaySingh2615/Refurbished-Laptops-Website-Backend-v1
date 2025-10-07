@@ -285,23 +285,49 @@ export const filterProducts = async (req, res) => {
     }
     if (minPrice) where.push(gte(products.price, Number(minPrice)));
     if (maxPrice) where.push(lte(products.price, Number(maxPrice)));
+    // Variant-aware RAM filter
     if (ramGb) {
       const list = toList(ramGb)
         .map((n) => parseInt(n, 10))
         .filter((n) => !Number.isNaN(n));
       if (list.length === 1) {
-        where.push(eq(products.ramGb, list[0]));
+        const v = list[0];
+        where.push(
+          or(
+            eq(products.ramGb, v),
+            sql`JSON_EXTRACT(${productVariants.attributes}, '$.ramGb') = ${v}`
+          )
+        );
       } else if (list.length > 1) {
-        where.push(inArray(products.ramGb, list));
+        // match any of provided RAM values either on base or variant
+        const ors = list.map((v) =>
+          or(
+            eq(products.ramGb, v),
+            sql`JSON_EXTRACT(${productVariants.attributes}, '$.ramGb') = ${v}`
+          )
+        );
+        where.push(or(...ors));
       }
     }
+    // Variant-aware storage filter
     if (storage) {
       const list = toList(storage);
-      // Match storage type token inside description (e.g., "512GB SSD" should match "SSD")
       if (list.length === 1) {
-        where.push(like(products.storage, `%${list[0]}%`));
+        const t = `%${list[0]}%`;
+        where.push(
+          or(
+            like(products.storage, t),
+            sql`JSON_EXTRACT(${productVariants.attributes}, '$.storage') LIKE ${t}`
+          )
+        );
       } else if (list.length > 1) {
-        const likes = list.map((t) => like(products.storage, `%${t}%`));
+        const likes = list.map((it) => {
+          const t = `%${it}%`;
+          return or(
+            like(products.storage, t),
+            sql`JSON_EXTRACT(${productVariants.attributes}, '$.storage') LIKE ${t}`
+          );
+        });
         where.push(or(...likes));
       }
     }
@@ -311,19 +337,22 @@ export const filterProducts = async (req, res) => {
     const offset = (pageNum - 1) * limitNum;
 
     const filteredProducts = await db
-      .select()
+      .select({ p: products })
       .from(products)
+      .leftJoin(productVariants, eq(productVariants.productId, products.id))
       .where(where.length > 0 ? and(...where) : undefined)
+      .groupBy(products.id)
       .limit(limitNum)
       .offset(offset);
 
     const [{ total }] = await db
-      .select({ total: sql`count(*)`.mapWith(Number) })
+      .select({ total: sql`count(distinct ${products.id})`.mapWith(Number) })
       .from(products)
+      .leftJoin(productVariants, eq(productVariants.productId, products.id))
       .where(where.length > 0 ? and(...where) : undefined);
 
     res.json({
-      products: filteredProducts,
+      products: filteredProducts.map((r) => r.p),
       filters: req.query,
       pagination: {
         page: pageNum,
