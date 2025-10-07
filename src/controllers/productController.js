@@ -53,6 +53,26 @@ export const getProductById = async (req, res) => {
   }
 };
 
+export const getProductBySku = async (req, res) => {
+  try {
+    const { sku } = req.params;
+    const product = await db
+      .select()
+      .from(products)
+      .where(eq(products.sku, sku))
+      .limit(1);
+
+    if (product.length === 0) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    res.json(product[0]);
+  } catch (error) {
+    console.error("Error fetching product by SKU:", error);
+    res.status(500).json({ message: "Failed to fetch product" });
+  }
+};
+
 export const searchProducts = async (req, res) => {
   try {
     const { q } = req.query;

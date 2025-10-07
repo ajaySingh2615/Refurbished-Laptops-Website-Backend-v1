@@ -5,6 +5,7 @@ import {
   filterProducts,
   getAllProducts,
   getProductById,
+  getProductBySku,
   searchProducts,
   updatedProduct,
 } from "../controllers/productController.js";
@@ -15,6 +16,7 @@ const router = express.Router();
 router.get("/", getAllProducts);
 router.get("/search", searchProducts);
 router.get("/filter", filterProducts);
+router.get("/sku/:sku", getProductBySku);
 router.get("/:id", getProductById);
 
 // Admin routes (add auth middlewares later)
