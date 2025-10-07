@@ -15,6 +15,13 @@
       "when": 1759763562394,
       "tag": "0001_hesitant_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1759815469601,
+      "tag": "0002_outstanding_tag",
+      "breakpoints": true
     }
   ]
 }
