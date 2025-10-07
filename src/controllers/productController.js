@@ -73,6 +73,52 @@ export const getProductBySku = async (req, res) => {
   }
 };
 
+export const getLowStockCount = async (req, res) => {
+  try {
+    const threshold = Math.max(
+      0,
+      parseInt(String(req.query.threshold ?? 5), 10) || 5
+    );
+    // Count total low stock across entire table
+    const [{ total }] = await db
+      .select({ total: sql`count(*)`.mapWith(Number) })
+      .from(products)
+      .where(
+        and(eq(products.inStock, true), lte(products.stockQty, threshold))
+      );
+
+    // Also return up to 3 example titles for the banner
+    const sample = await db
+      .select({ title: products.title })
+      .from(products)
+      .where(and(eq(products.inStock, true), lte(products.stockQty, threshold)))
+      .limit(3);
+
+    res.json({ count: total, titles: sample.map((s) => s.title), threshold });
+  } catch (error) {
+    console.error("Error fetching low stock count:", error);
+    res.status(500).json({ message: "Failed to fetch low stock summary" });
+  }
+};
+
+export const getLowStockList = async (req, res) => {
+  try {
+    const threshold = Math.max(
+      0,
+      parseInt(String(req.query.threshold ?? 5), 10) || 5
+    );
+    const rows = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.inStock, true), lte(products.stockQty, threshold)))
+      .orderBy(products.stockQty);
+    res.json({ products: rows, threshold });
+  } catch (error) {
+    console.error("Error fetching low stock list:", error);
+    res.status(500).json({ message: "Failed to fetch low stock products" });
+  }
+};
+
 export const searchProducts = async (req, res) => {
   try {
     const { q } = req.query;

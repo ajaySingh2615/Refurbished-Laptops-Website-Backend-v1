@@ -6,6 +6,8 @@ import {
   getAllProducts,
   getProductById,
   getProductBySku,
+  getLowStockCount,
+  getLowStockList,
   searchProducts,
   updatedProduct,
 } from "../controllers/productController.js";
@@ -16,6 +18,8 @@ const router = express.Router();
 router.get("/", getAllProducts);
 router.get("/search", searchProducts);
 router.get("/filter", filterProducts);
+router.get("/low-stock/summary", getLowStockCount);
+router.get("/low-stock/list", getLowStockList);
 router.get("/sku/:sku", getProductBySku);
 router.get("/:id", getProductById);
 
