@@ -179,6 +179,22 @@ export const filterProducts = async (req, res) => {
 export const createProducts = async (req, res) => {
   try {
     const productData = req.body;
+
+    // Check if SKU already exists
+    if (productData.sku) {
+      const existingProduct = await db
+        .select()
+        .from(products)
+        .where(eq(products.sku, productData.sku))
+        .limit(1);
+
+      if (existingProduct.length > 0) {
+        return res.status(400).json({
+          message: `SKU "${productData.sku}" already exists. Please generate a new SKU.`,
+        });
+      }
+    }
+
     const newProduct = await db.insert(products).values(productData);
     res.status(201).json({
       message: "Product created successfully",
