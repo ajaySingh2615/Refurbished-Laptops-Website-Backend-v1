@@ -7,6 +7,7 @@ import {
   boolean,
   timestamp,
   mysqlTable,
+  json,
 } from "drizzle-orm/mysql-core";
 
 export const products = mysqlTable("products", {
@@ -49,6 +50,22 @@ export const products = mysqlTable("products", {
   metaTitle: varchar("meta_title", { length: 255 }),
   metaDescription: varchar("meta_description", { length: 255 }),
   metaKeywords: varchar("meta_keywords", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const productVariants = mysqlTable("product_variants", {
+  id: serial("id").primaryKey(),
+  productId: int("product_id").notNull(),
+  sku: varchar("sku", { length: 128 }).notNull(),
+  attributes: json("attributes").notNull(), // { color, ramGb, storage, ... }
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  mrp: decimal("mrp", { precision: 10, scale: 2 }),
+  discountPercent: int("discount_percent"),
+  gstPercent: int("gst_percent").default(18),
+  inStock: boolean("in_stock").notNull().default(true),
+  stockQty: int("stock_qty").default(0),
+  fulfillmentLocation: varchar("fulfillment_location", { length: 128 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });

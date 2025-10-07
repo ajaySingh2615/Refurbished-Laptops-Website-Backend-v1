@@ -1,5 +1,5 @@
 import { db } from "../db/client.js";
-import { products } from "../db/schema.js";
+import { products, productVariants } from "../db/schema.js";
 import { eq, like, and, or, gte, lte, inArray, sql } from "drizzle-orm";
 
 export const getAllProducts = async (req, res) => {
@@ -46,7 +46,13 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    res.json(product[0]);
+    // Load variants
+    const variants = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, product[0].id));
+
+    res.json({ ...product[0], variants });
   } catch (error) {
     console.error("Error fetching product:", error);
     res.status(500).json({ message: "Failed to fetch product" });
@@ -63,10 +69,37 @@ export const getProductBySku = async (req, res) => {
       .limit(1);
 
     if (product.length === 0) {
-      return res.status(404).json({ message: "Product not found" });
+      // fallback: maybe SKU matches a variant
+      const variant = await db
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.sku, sku))
+        .limit(1);
+      if (variant.length === 0) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+      const base = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, variant[0].productId))
+        .limit(1);
+      const siblings = await db
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.productId, variant[0].productId));
+      return res.json({
+        ...base[0],
+        variants: siblings,
+        selectedVariant: variant[0],
+      });
     }
 
-    res.json(product[0]);
+    const variants = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.productId, product[0].id));
+
+    res.json({ ...product[0], variants });
   } catch (error) {
     console.error("Error fetching product by SKU:", error);
     res.status(500).json({ message: "Failed to fetch product" });
@@ -116,6 +149,69 @@ export const getLowStockList = async (req, res) => {
   } catch (error) {
     console.error("Error fetching low stock list:", error);
     res.status(500).json({ message: "Failed to fetch low stock products" });
+  }
+};
+
+// Variants CRUD
+export const createVariants = async (req, res) => {
+  try {
+    const { id } = req.params; // product id
+    const { variants } = req.body; // array of { sku, attributes, price, ... }
+    if (!Array.isArray(variants) || variants.length === 0) {
+      return res.status(400).json({ message: "Variants array is required" });
+    }
+    // enforce productId
+    const rows = variants.map((v) => ({ ...v, productId: Number(id) }));
+    await db.insert(productVariants).values(rows);
+    res.status(201).json({ message: "Variants created", count: rows.length });
+  } catch (error) {
+    console.error("Error creating variants:", error);
+    res.status(500).json({ message: "Failed to create variants" });
+  }
+};
+
+export const updateVariant = async (req, res) => {
+  try {
+    const { variantId } = req.params;
+    const payload = req.body;
+    await db
+      .update(productVariants)
+      .set(payload)
+      .where(eq(productVariants.id, Number(variantId)));
+    res.json({ message: "Variant updated" });
+  } catch (error) {
+    console.error("Error updating variant:", error);
+    res.status(500).json({ message: "Failed to update variant" });
+  }
+};
+
+export const deleteVariant = async (req, res) => {
+  try {
+    const { variantId } = req.params;
+    await db
+      .delete(productVariants)
+      .where(eq(productVariants.id, Number(variantId)));
+    res.json({ message: "Variant deleted" });
+  } catch (error) {
+    console.error("Error deleting variant:", error);
+    res.status(500).json({ message: "Failed to delete variant" });
+  }
+};
+
+export const getVariantBySku = async (req, res) => {
+  try {
+    const { sku } = req.params;
+    const variant = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.sku, sku))
+      .limit(1);
+    if (variant.length === 0)
+      return res.status(404).json({ message: "Variant not found" });
+    res.json(variant[0]);
+  } catch (error) {
+    console.error("Error fetching variant by SKU:", error);
+    res.status(500).json({ message: "Failed to fetch variant" });
   }
 };
 

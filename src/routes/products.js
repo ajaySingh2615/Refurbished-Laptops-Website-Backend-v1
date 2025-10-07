@@ -8,6 +8,10 @@ import {
   getProductBySku,
   getLowStockCount,
   getLowStockList,
+  createVariants,
+  updateVariant,
+  deleteVariant,
+  getVariantBySku,
   searchProducts,
   updatedProduct,
 } from "../controllers/productController.js";
@@ -22,6 +26,12 @@ router.get("/low-stock/summary", getLowStockCount);
 router.get("/low-stock/list", getLowStockList);
 router.get("/sku/:sku", getProductBySku);
 router.get("/:id", getProductById);
+
+// Variant routes
+router.post("/:id/variants", createVariants);
+router.put("/variants/:variantId", updateVariant);
+router.delete("/variants/:variantId", deleteVariant);
+router.get("/variants/sku/:sku", getVariantBySku);
 
 // Admin routes (add auth middlewares later)
 router.post("/", createProducts);
