@@ -1,12 +1,68 @@
 import { db } from "./client.js";
-import { products } from "./schema.js";
+import { products, categories } from "./schema.js";
+import { eq } from "drizzle-orm";
+
+async function ensureCategoryPath(
+  parentName,
+  parentSlug,
+  childName,
+  childSlug
+) {
+  // find/create parent
+  let parent = (await db.select().from(categories)).find(
+    (c) => c.slug === parentSlug
+  );
+  if (!parent) {
+    const r = await db
+      .insert(categories)
+      .values({ name: parentName, slug: parentSlug, parentId: null });
+    parent = {
+      id: r.insertId,
+      name: parentName,
+      slug: parentSlug,
+      parentId: null,
+    };
+  }
+  // find/create child
+  let child = (await db.select().from(categories)).find(
+    (c) => c.slug === childSlug
+  );
+  if (!child) {
+    const r = await db
+      .insert(categories)
+      .values({ name: childName, slug: childSlug, parentId: parent.id });
+    child = {
+      id: r.insertId,
+      name: childName,
+      slug: childSlug,
+      parentId: parent.id,
+    };
+  } else if (!child.parentId || child.parentId !== parent.id) {
+    // Ensure existing child is linked to correct parent
+    await db
+      .update(categories)
+      .set({ parentId: parent.id })
+      .where(eq(categories.id, child.id));
+    child.parentId = parent.id;
+  }
+  return child.id;
+}
 
 async function main() {
   // Clear existing rows (optional). Comment out if you don't want to truncate.
   // await db.delete(products);
 
+  // Ensure categories exist and get Laptops categoryId
+  const laptopsCategoryId = await ensureCategoryPath(
+    "Electronics",
+    "electronics",
+    "Laptops",
+    "electronics/laptops"
+  );
+
   await db.insert(products).values([
     {
+      categoryId: laptopsCategoryId,
       title: "Dell Latitude 7400",
       brand: "Dell",
       model: "Latitude 7400",
@@ -44,6 +100,7 @@ async function main() {
       description: "Slim, business-grade ultrabook with great battery life.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo ThinkPad T480",
       brand: "Lenovo",
       model: "ThinkPad T480",
@@ -81,6 +138,7 @@ async function main() {
       description: "Durable classic with hot-swappable battery support.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP EliteBook 840 G5",
       brand: "HP",
       model: "EliteBook 840 G5",
@@ -118,6 +176,7 @@ async function main() {
       description: "Executive-class ultrabook with robust security features.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Apple MacBook Pro 13 (2017)",
       brand: "Apple",
       model: "MacBook Pro 13 2017",
@@ -155,6 +214,7 @@ async function main() {
       description: "Reliable Apple laptop for creators and students.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Acer Aspire 5",
       brand: "Acer",
       model: "Aspire 5 A515",
@@ -192,6 +252,7 @@ async function main() {
       description: "Balanced performance for office and study.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Dell XPS 13 (9370)",
       brand: "Dell",
       model: "XPS 13 9370",
@@ -229,6 +290,7 @@ async function main() {
       description: "High-end ultrabook with premium design.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP ProBook 440 G6",
       brand: "HP",
       model: "ProBook 440 G6",
@@ -266,6 +328,7 @@ async function main() {
       description: "Reliable business notebook for teams.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo IdeaPad 3",
       brand: "Lenovo",
       model: "IdeaPad 3 15ADA",
@@ -303,6 +366,7 @@ async function main() {
       description: "Budget work and study laptop.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "ASUS VivoBook 14",
       brand: "ASUS",
       model: "VivoBook X412",
@@ -340,6 +404,7 @@ async function main() {
       description: "Portable everyday laptop with modern ports.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "MSI Modern 14",
       brand: "MSI",
       model: "Modern 14 B4MW",
@@ -377,6 +442,7 @@ async function main() {
       description: "Modern design with quiet performance.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo ThinkPad X1 Carbon (6th Gen)",
       brand: "Lenovo",
       model: "X1 Carbon Gen 6",
@@ -414,6 +480,7 @@ async function main() {
       description: "Iconic ThinkPad with premium mobility.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP ZBook 15 G3",
       brand: "HP",
       model: "ZBook 15 G3",
@@ -451,6 +518,7 @@ async function main() {
       description: "Mobile workstation for CAD and 3D.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "ASUS TUF Gaming A15",
       brand: "ASUS",
       model: "TUF A15",
@@ -488,6 +556,7 @@ async function main() {
       description: "Affordable gaming powerhouse.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Apple MacBook Air (2019)",
       brand: "Apple",
       model: "MacBook Air 2019",
@@ -525,6 +594,7 @@ async function main() {
       description: "Lightweight Mac for everyday use.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Microsoft Surface Laptop 3",
       brand: "Microsoft",
       model: "Surface Laptop 3",
@@ -562,6 +632,7 @@ async function main() {
       description: "Beautiful display for productivity.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo ThinkPad L490",
       brand: "Lenovo",
       model: "ThinkPad L490",
@@ -599,6 +670,7 @@ async function main() {
       description: "Reliable ThinkPad for professionals.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP EliteBook 830 G6",
       brand: "HP",
       model: "EliteBook 830 G6",
@@ -636,6 +708,7 @@ async function main() {
       description: "Travel-friendly business ultrabook.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Dell Latitude 5490",
       brand: "Dell",
       model: "Latitude 5490",
@@ -673,6 +746,7 @@ async function main() {
       description: "Dependable Latitude series for teams.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Acer Nitro 5 (2019)",
       brand: "Acer",
       model: "Nitro 5 AN515",
@@ -710,6 +784,7 @@ async function main() {
       description: "Gaming on a budget.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP Pavilion 15",
       brand: "HP",
       model: "Pavilion 15",
@@ -747,6 +822,7 @@ async function main() {
       description: "Balanced thin-and-light.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo Legion Y540",
       brand: "Lenovo",
       model: "Legion Y540",
@@ -784,6 +860,7 @@ async function main() {
       description: "Mid-range gaming laptop.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Dell Latitude 7410",
       brand: "Dell",
       model: "Latitude 7410",
@@ -821,6 +898,7 @@ async function main() {
       description: "Executive business ultrabook.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP Elite Dragonfly G1",
       brand: "HP",
       model: "Elite Dragonfly G1",
@@ -858,6 +936,7 @@ async function main() {
       description: "Ultra-light premium business convertible.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "ASUS ROG Zephyrus G14 (2020)",
       brand: "ASUS",
       model: "ROG G14 GA401",
@@ -895,6 +974,7 @@ async function main() {
       description: "Beloved compact gaming laptop.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Microsoft Surface Pro 6",
       brand: "Microsoft",
       model: "Surface Pro 6",
@@ -932,6 +1012,7 @@ async function main() {
       description: "Tablet-laptop hybrid for mobility.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Lenovo ThinkBook 14",
       brand: "Lenovo",
       model: "ThinkBook 14",
@@ -969,6 +1050,7 @@ async function main() {
       description: "Modern business laptop with USB-C.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Acer Swift 3",
       brand: "Acer",
       model: "Swift 3 SF314",
@@ -1006,6 +1088,7 @@ async function main() {
       description: "Great balance of portability and power.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "MSI GF63 Thin",
       brand: "MSI",
       model: "GF63 9SC",
@@ -1043,6 +1126,7 @@ async function main() {
       description: "Entry-level gaming machine.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Apple MacBook Pro 15 (2018)",
       brand: "Apple",
       model: "MacBook Pro 15 2018",
@@ -1080,6 +1164,7 @@ async function main() {
       description: "Powerful Mac for creators.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "Dell Inspiron 7490",
       brand: "Dell",
       model: "Inspiron 7490",
@@ -1117,6 +1202,7 @@ async function main() {
       description: "Premium portability for office users.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "HP Omen 15 (2019)",
       brand: "HP",
       model: "Omen 15 2019",
@@ -1154,6 +1240,7 @@ async function main() {
       description: "Performance gaming laptop with RTX.",
     },
     {
+      categoryId: laptopsCategoryId,
       title: "ASUS ZenBook 14",
       brand: "ASUS",
       model: "ZenBook 14 UX433",

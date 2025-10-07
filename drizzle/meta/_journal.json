@@ -29,6 +29,34 @@
       "when": 1759822925297,
       "tag": "0003_calm_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1759829357038,
+      "tag": "0004_public_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1759830830877,
+      "tag": "0005_watery_scorpion",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1759831722906,
+      "tag": "0006_nervous_quentin_quire",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1759832419760,
+      "tag": "0007_fat_arachne",
+      "breakpoints": true
     }
   ]
 }

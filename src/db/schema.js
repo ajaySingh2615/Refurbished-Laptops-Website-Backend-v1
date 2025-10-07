@@ -10,10 +10,21 @@ import {
   json,
 } from "drizzle-orm/mysql-core";
 
+export const categories = mysqlTable("categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  slug: varchar("slug", { length: 256 }).notNull(),
+  parentId: int("parent_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
 export const products = mysqlTable("products", {
   id: serial("id").primaryKey(),
+  categoryId: int("category_id").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   brand: varchar("brand", { length: 128 }).notNull(),
+  // subType removed in favor of hierarchical categories
   model: varchar("model", { length: 128 }),
   sku: varchar("sku", { length: 64 }),
   cpu: varchar("cpu", { length: 128 }),

@@ -249,6 +249,7 @@ export const filterProducts = async (req, res) => {
       maxPrice,
       ramGb,
       storage,
+      subType,
       inStock,
       sortBy,
       sortOrder,
@@ -270,6 +271,14 @@ export const filterProducts = async (req, res) => {
         list.length > 1
           ? inArray(products.brand, list)
           : eq(products.brand, list[0])
+      );
+    }
+    if (subType) {
+      const list = toList(subType);
+      where.push(
+        list.length > 1
+          ? inArray(products.subType, list)
+          : eq(products.subType, list[0])
       );
     }
     if (condition) {
