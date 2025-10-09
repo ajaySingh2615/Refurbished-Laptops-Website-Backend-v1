@@ -1,5 +1,10 @@
 import { db } from "../db/client.js";
-import { users, sessions, passwordResets } from "../db/schema.js";
+import {
+  users,
+  sessions,
+  passwordResets,
+  emailVerifications,
+} from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import {
   hashPassword,
@@ -13,11 +18,13 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import path from "path";
+import { sendMail } from "../utils/mailer.js";
 
 function setRefreshCookie(res, token) {
   res.cookie("refresh_token", token, {
     httpOnly: true,
-    secure: true,
+    secure:
+      String(process.env.COOKIE_SECURE || "false").toLowerCase() === "true",
     sameSite: "lax",
     path: "/api/auth",
     maxAge: 1000 * 60 * 60 * 24 * Number(process.env.REFRESH_TTL_DAYS || 30),
@@ -35,8 +42,51 @@ export const register = async (req, res) => {
 
     const passwordHash = await hashPassword(password);
     await db.insert(users).values({ email, passwordHash, name });
-    // Optionally send verification email here
-    return res.status(201).json({ message: "Registered" });
+
+    // Auto-login on successful registration
+    const [u] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    const access = signAccessToken({ sub: u.id, role: u.role, email: u.email });
+    const refresh = signRefreshToken({ sub: u.id });
+    await db.insert(sessions).values({
+      userId: u.id,
+      refreshTokenHash: sha256(refresh),
+      userAgent: req.headers["user-agent"] || null,
+      ip: req.ip || null,
+      expiresAt: new Date(
+        Date.now() +
+          1000 * 60 * 60 * 24 * Number(process.env.REFRESH_TTL_DAYS || 30)
+      ),
+    });
+    setRefreshCookie(res, refresh);
+
+    // Soft-gate email verification: send verification link asynchronously
+    try {
+      if (process.env.REQUIRE_EMAIL_VERIFICATION !== "false") {
+        const raw = randomToken(24);
+        const tokenHash = sha256(raw);
+        const ttlHours = Number(process.env.VERIFICATION_TOKEN_TTL_HOURS || 24);
+        const appUrl = process.env.APP_URL || "http://localhost:5173";
+        await db.insert(emailVerifications).values({
+          userId: u.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + ttlHours * 60 * 60 * 1000),
+        });
+        const link = `${appUrl}/verify-email?token=${raw}`;
+        await sendMail({
+          to: u.email,
+          subject: "Verify your email",
+          text: `Click to verify: ${link}`,
+          html: `<p>Hi ${name || ""},</p><p>Verify your email by clicking the link below:</p><p><a href="${link}">Verify Email</a></p><p>This link expires in ${ttlHours} hours.</p>`,
+        });
+      }
+    } catch {}
+
+    return res.status(201).json({ access });
   } catch (error) {
     return res.status(500).json({ message: "Failed to register" });
   }
@@ -125,6 +175,7 @@ export const me = async (req, res) => {
         email: users.email,
         name: users.name,
         role: users.role,
+        emailVerifiedAt: users.emailVerifiedAt,
       })
       .from(users)
       .where(eq(users.id, req.user.sub))

@@ -144,3 +144,12 @@ export const auditLogs = mysqlTable("audit_logs", {
   userAgent: varchar("user_agent", { length: 255 }).default(null),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const emailVerifications = mysqlTable("email_verifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  tokenHash: varchar("token_hash", { length: 191 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
