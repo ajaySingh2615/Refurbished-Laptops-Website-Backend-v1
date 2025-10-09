@@ -9,6 +9,7 @@ import {
   mysqlTable,
   json,
 } from "drizzle-orm/mysql-core";
+import { datetime } from "drizzle-orm/singlestore-core";
 
 export const categories = mysqlTable("categories", {
   id: serial("id").primaryKey(),
@@ -79,4 +80,68 @@ export const productVariants = mysqlTable("product_variants", {
   fulfillmentLocation: varchar("fulfillment_location", { length: 128 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 191 }).unique().notNull(),
+  phone: varchar("phone", { length: 32 }).unique().default(null),
+  passwordHash: varchar("password_hash", { length: 191 }).default(null),
+  name: varchar("name", { length: 128 }).default(null),
+  avatarUrl: varchar("avatar_url", { length: 255 }).default(null),
+  role: varchar("role", { length: 32 }).notNull().default("customer"), //customer / admin
+  status: varchar("status", { length: 32 }).notNull().default("active"), //active, suspended, deleted
+  emailVerifiedAt: datetime("email_verified_at").default(null),
+  phoneVerifiedAt: datetime("phone_verified_at").default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
+  updatedAt: datetime("updated_at").notNull().defaultNow(),
+});
+
+export const userOauthAccounts = mysqlTable("user_oauth_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  provider: varchar("provider", { length: 32 }).notNull(), //google
+  providerUserId: varchar("provider_user_id", { length: 191 }).notNull(),
+  providerEmail: varchar("provider_email", { length: 191 }).default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
+});
+
+export const sessions = mysqlTable("sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  refreshTokenHash: varchar("refresh_token_hash", { length: 191 }).notNull(),
+  userAgent: varchar("user_agent", { length: 255 }).default(null),
+  ip: varchar("ip", { length: 64 }).default(null),
+  expiresAt: datetime("expires_at").notNull(),
+  revokedAt: datetime("revoked_at").default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
+});
+
+export const passwordResets = mysqlTable("password_resets", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  tokenHash: varchar("token_hash", { length: 191 }).notNull(),
+  expiresAt: datetime("expires_at").notNull(),
+  userdAt: datetime("userd_at").default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
+});
+
+export const phoneOtps = mysqlTable("phone_otps", {
+  id: int("id").autoincrement().primaryKey(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  codeHash: varchar("code_hash", { length: 191 }).notNull(),
+  attempts: int("attempts").notNull().default(0),
+  expiresAt: datetime("expires_at").notNull(),
+  usedAt: datetime("used_at").default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
+});
+
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").default(null),
+  action: varchar("action", { length: 64 }).notNull(),
+  metadata: json("metadata").$type().default(),
+  ip: varchar("ip", { length: 64 }).default(null),
+  userAgent: varchar("user_agent", { length: 255 }).default(null),
+  createdAt: datetime("created_at").notNull().defaultNow(),
 });
