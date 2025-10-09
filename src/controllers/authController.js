@@ -66,25 +66,40 @@ export const register = async (req, res) => {
 
     // Soft-gate email verification: send verification link asynchronously
     try {
+      console.log(
+        "REQUIRE_EMAIL_VERIFICATION:",
+        process.env.REQUIRE_EMAIL_VERIFICATION
+      );
       if (process.env.REQUIRE_EMAIL_VERIFICATION !== "false") {
+        console.log("Sending verification email to:", u.email);
         const raw = randomToken(24);
         const tokenHash = sha256(raw);
         const ttlHours = Number(process.env.VERIFICATION_TOKEN_TTL_HOURS || 24);
         const appUrl = process.env.APP_URL || "http://localhost:5173";
+
         await db.insert(emailVerifications).values({
           userId: u.id,
           tokenHash,
           expiresAt: new Date(Date.now() + ttlHours * 60 * 60 * 1000),
         });
+
         const link = `${appUrl}/verify-email?token=${raw}`;
-        await sendMail({
+        console.log("Verification link:", link);
+
+        const result = await sendMail({
           to: u.email,
           subject: "Verify your email",
           text: `Click to verify: ${link}`,
           html: `<p>Hi ${name || ""},</p><p>Verify your email by clicking the link below:</p><p><a href="${link}">Verify Email</a></p><p>This link expires in ${ttlHours} hours.</p>`,
         });
+
+        console.log("Email send result:", result);
+      } else {
+        console.log("Email verification disabled");
       }
-    } catch {}
+    } catch (error) {
+      console.error("Email verification error:", error);
+    }
 
     return res.status(201).json({ access });
   } catch (error) {

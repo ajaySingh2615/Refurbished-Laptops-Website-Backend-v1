@@ -26,20 +26,36 @@ router.get("/me", requireAuth, me);
 router.get("/verify-email", async (req, res) => {
   try {
     const token = String(req.query.token || "");
+    console.log("Verification request - token:", token);
     if (!token) return res.status(400).json({ message: "Missing token" });
+
     const [rec] = await db
       .select()
       .from(emailVerifications)
-      .where(
-        and(
-          eq(emailVerifications.tokenHash, sha256(token)),
-          isNull(emailVerifications.usedAt)
-        )
-      )
+      .where(eq(emailVerifications.tokenHash, sha256(token)))
       .limit(1);
+
+    console.log("Found verification record:", rec);
+
     if (!rec) return res.status(400).json({ message: "Invalid token" });
+
+    // If token already used, check if user is verified
+    if (rec.usedAt) {
+      const [user] = await db
+        .select({ emailVerifiedAt: users.emailVerifiedAt })
+        .from(users)
+        .where(eq(users.id, rec.userId));
+
+      if (user?.emailVerifiedAt) {
+        console.log("User already verified");
+        return res.json({ message: "Email already verified" });
+      } else {
+        return res.status(400).json({ message: "Token already used" });
+      }
+    }
     if (!(new Date(rec.expiresAt) > new Date()))
       return res.status(400).json({ message: "Token expired" });
+
     await db
       .update(users)
       .set({ emailVerifiedAt: new Date() })
@@ -48,8 +64,11 @@ router.get("/verify-email", async (req, res) => {
       .update(emailVerifications)
       .set({ usedAt: new Date() })
       .where(eq(emailVerifications.id, rec.id));
+
+    console.log("Email verification successful for user:", rec.userId);
     return res.json({ message: "Email verified" });
   } catch (e) {
+    console.error("Verification error:", e);
     return res.status(500).json({ message: "Failed to verify" });
   }
 });

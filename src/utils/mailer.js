@@ -1,23 +1,33 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-export function createTransport() {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: false,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-  }
-  return null; // fallback to console
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function sendMail({ to, subject, html, text }) {
-  const from = process.env.EMAIL_FROM || "noreply@example.com";
-  const t = createTransport();
-  if (!t) {
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+
+  // If no Resend API key, fallback to console
+  if (!process.env.RESEND_API_KEY) {
     console.log("\n[MAIL]", { to, subject, text, html });
-    return;
+    return { success: true };
   }
-  await t.sendMail({ from, to, subject, html, text });
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from,
+      to: [to],
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend error:", error);
+      return { success: false, error: error.message };
+    }
+
+    console.log("Email sent via Resend:", data?.id);
+    return { success: true, messageId: data?.id };
+  } catch (error) {
+    console.error("Email sending failed:", error);
+    return { success: false, error: error.message };
+  }
 }
