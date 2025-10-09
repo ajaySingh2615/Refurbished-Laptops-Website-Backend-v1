@@ -7,11 +7,11 @@ import healthRoutes from "./routes/health.js";
 import authRouters from "./routes/auth.js";
 import googleRoutes from "./routes/google.js";
 import passport from "passport";
-import { configureGoogleStrategy } from "../passport/googleStrategy.js";
+import { configureGoogleStrategy } from "./passport/googleStrategy.js";
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 configureGoogleStrategy();
 app.use(passport.initialize());

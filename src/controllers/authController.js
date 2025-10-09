@@ -10,7 +10,7 @@ import {
 import {
   signAccessToken,
   signRefreshToken,
-  verifyRefresh,
+  verifyRefreshToken,
 } from "../utils/jwt.js";
 import path from "path";
 
@@ -28,7 +28,7 @@ function setRefreshCookie(res, token) {
 export const register = async (req, res) => {
   try {
     const { email, password, name } = req.body;
-    if ((!email, !password))
+    if (!email || !password)
       return res.status(400).json({
         message: "Email and password required",
       });
@@ -81,7 +81,7 @@ export const refresh = async (req, res) => {
   try {
     const token = req.cookies?.refresh_token;
     if (!token) return res.status(401).json({ message: "Missing refresh" });
-    const claims = verifyRefresh(token);
+    const claims = verifyRefreshToken(token);
     const [sess] = await db
       .select()
       .from(sessions)
@@ -103,9 +103,9 @@ export const refresh = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
-    const token = req.cookie?.refresh_token;
+    const token = req.cookies?.refresh_token;
     if (token) {
-      await ab
+      await db
         .update(sessions)
         .set({ revokedAt: new Date() })
         .where(eq(sessions.refreshTokenHash, sha256(token)));

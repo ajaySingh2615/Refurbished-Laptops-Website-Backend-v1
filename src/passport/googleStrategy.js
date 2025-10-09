@@ -1,7 +1,7 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { db } from "../src/db/client.js";
-import { users, userOauthAccounts } from "../src/db/schema.js";
+import { db } from "../db/client.js";
+import { users, userOauthAccounts } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 
 export function configureGoogleStrategy() {
