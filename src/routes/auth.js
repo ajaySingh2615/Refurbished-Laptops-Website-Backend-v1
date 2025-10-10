@@ -25,12 +25,101 @@ import {
   sendPasswordResetSuccessEmail,
 } from "../utils/mailer.js";
 import { sendMsg91OtpSms } from "../services/msg91.js";
+import { signAccessToken, signRefreshToken } from "../utils/jwt.js";
 
 const router = express.Router();
+
+function setRefreshCookie(res, token) {
+  res.cookie("refresh_token", token, {
+    httpOnly: true,
+    secure:
+      String(process.env.COOKIE_SECURE || "false").toLowerCase() === "true",
+    sameSite: "lax",
+    path: "/api/auth",
+    maxAge: 1000 * 60 * 60 * 24 * Number(process.env.REFRESH_TTL_DAYS || 30),
+  });
+}
 router.use(cookieParser());
 
 router.post("/register", register);
 router.post("/login", login);
+// Admin bootstrap login: uses env ADMIN_EMAIL/ADMIN_PASSWORD and ensures admin user exists
+/* Removed: dedicated /admin/login (use normal /login with admin role) */
+/*
+router.post("/admin/login", async (req, res) => {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL || "";
+    const adminPassword = process.env.ADMIN_PASSWORD || "";
+    const { email, password } = req.body || {};
+
+    if (!adminEmail || !adminPassword) {
+      return res.status(400).json({ message: "Admin login not configured" });
+    }
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
+    }
+    if (email !== adminEmail || password !== adminPassword) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Ensure admin user exists
+    let [u] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, adminEmail))
+      .limit(1);
+    const hashed = await bcrypt.hash(adminPassword, 12);
+    if (!u) {
+      await db.insert(users).values({
+        email: adminEmail,
+        role: "admin",
+        status: "active",
+        passwordHash: hashed,
+        emailVerifiedAt: new Date(),
+      });
+      [u] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, adminEmail))
+        .limit(1);
+    } else {
+      // Make sure role/password are set
+      await db
+        .update(users)
+        .set({
+          role: "admin",
+          status: "active",
+          passwordHash: hashed,
+          emailVerifiedAt: u.emailVerifiedAt || new Date(),
+        })
+        .where(eq(users.id, u.id));
+      [u] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, adminEmail))
+        .limit(1);
+    }
+
+    const access = signAccessToken({ sub: u.id, role: u.role });
+    const refreshToken = signRefreshToken({ sub: u.id });
+    setRefreshCookie(res, refreshToken);
+    return res.json({
+      access,
+      user: {
+        id: u.id,
+        email: u.email,
+        role: u.role,
+        name: u.name,
+        emailVerifiedAt: u.emailVerifiedAt,
+        phone: u.phone,
+      },
+    });
+  } catch (e) {
+    console.error("Admin login error:", e);
+    return res.status(500).json({ message: "Failed to login" });
+  }
+});
+*/
 router.post("/logout", logout);
 router.post("/refresh", refresh);
 router.get("/me", requireAuth, me);
