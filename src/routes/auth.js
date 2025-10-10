@@ -15,7 +15,7 @@ import {
   passwordResets,
   sessions,
 } from "../db/schema.js";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, or, like, sql } from "drizzle-orm";
 import { sha256 } from "../utils/crypto.js";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
@@ -26,6 +26,7 @@ import {
 } from "../utils/mailer.js";
 import { sendMsg91OtpSms } from "../services/msg91.js";
 import { signAccessToken, signRefreshToken } from "../utils/jwt.js";
+import { requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -123,6 +124,173 @@ router.post("/admin/login", async (req, res) => {
 router.post("/logout", logout);
 router.post("/refresh", refresh);
 router.get("/me", requireAuth, me);
+
+// Admin: list users (paginated with filters)
+router.get(
+  "/admin/users",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page || 1));
+      const pageSize = Math.min(
+        100,
+        Math.max(1, Number(req.query.pageSize || 20))
+      );
+      const offset = (page - 1) * pageSize;
+
+      // Extract filter parameters
+      const { search, role, status } = req.query;
+
+      // Build where conditions
+      let whereConditions = [];
+
+      // Search filter (email or name)
+      if (search) {
+        whereConditions.push(
+          or(like(users.email, `%${search}%`), like(users.name, `%${search}%`))
+        );
+      }
+
+      // Role filter
+      if (role && role !== "all") {
+        whereConditions.push(eq(users.role, role));
+      }
+
+      // Status filter
+      if (status && status !== "all") {
+        whereConditions.push(eq(users.status, status));
+      }
+
+      // Combine all conditions
+      const finalWhere =
+        whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+      // Get total count for pagination
+      const totalResult = await db
+        .select({ count: sql`count(*)` })
+        .from(users)
+        .where(finalWhere);
+      const total = totalResult[0]?.count || 0;
+
+      // Get paginated results
+      const rows = await db
+        .select()
+        .from(users)
+        .where(finalWhere)
+        .limit(pageSize)
+        .offset(offset);
+
+      return res.json({
+        data: rows,
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      });
+    } catch (e) {
+      console.error("Admin users list error:", e);
+      return res.status(500).json({ message: "Failed to fetch users" });
+    }
+  }
+);
+
+// Admin: create user (email+password), optional role/status
+router.post(
+  "/admin/users",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const {
+        email,
+        password,
+        name,
+        role = "customer",
+        status = "active",
+      } = req.body || {};
+      if (!email || !password)
+        return res.status(400).json({ message: "Email and password required" });
+      const hashed = await bcrypt.hash(password, 12);
+      await db.insert(users).values({
+        email,
+        passwordHash: hashed,
+        name,
+        role,
+        status,
+        emailVerifiedAt: new Date(),
+      });
+      return res.status(201).json({ message: "User created" });
+    } catch (e) {
+      return res.status(500).json({ message: "Failed to create user" });
+    }
+  }
+);
+
+// Admin: update user role/status/name
+router.patch(
+  "/admin/users/:id",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { role, status, name } = req.body || {};
+      const update = {};
+      if (role) update.role = role;
+      if (status) update.status = status;
+      if (name !== undefined) update.name = name;
+      if (Object.keys(update).length === 0)
+        return res.json({ message: "No changes" });
+      await db.update(users).set(update).where(eq(users.id, id));
+      return res.json({ message: "Updated" });
+    } catch (e) {
+      return res.status(500).json({ message: "Failed to update user" });
+    }
+  }
+);
+
+// Admin: reset password
+router.post(
+  "/admin/users/:id/reset-password",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { password } = req.body || {};
+      if (!password || password.length < 6)
+        return res.status(400).json({ message: "Password too short" });
+      const hashed = await bcrypt.hash(password, 12);
+      await db
+        .update(users)
+        .set({ passwordHash: hashed })
+        .where(eq(users.id, id));
+      // Force logout: delete sessions
+      await db.delete(sessions).where(eq(sessions.userId, id));
+      return res.json({ message: "Password reset" });
+    } catch (e) {
+      return res.status(500).json({ message: "Failed to reset password" });
+    }
+  }
+);
+
+// Admin: delete user
+router.delete(
+  "/admin/users/:id",
+  requireAuth,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await db.delete(sessions).where(eq(sessions.userId, id));
+      await db.delete(users).where(eq(users.id, id));
+      return res.json({ message: "Deleted" });
+    } catch (e) {
+      return res.status(500).json({ message: "Failed to delete user" });
+    }
+  }
+);
 
 // Phone: send OTP (no auth required)
 router.post("/phone/send-otp", async (req, res) => {
