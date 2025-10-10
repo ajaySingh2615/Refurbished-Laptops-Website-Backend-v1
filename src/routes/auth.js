@@ -1,5 +1,6 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import crypto from "crypto";
 import {
   register,
   login,
@@ -17,7 +18,6 @@ import {
 } from "../db/schema.js";
 import { eq, and, isNull, or, like, sql } from "drizzle-orm";
 import { sha256 } from "../utils/crypto.js";
-import crypto from "crypto";
 import bcrypt from "bcrypt";
 import {
   sendVerificationEmail,
@@ -246,31 +246,6 @@ router.patch(
       return res.json({ message: "Updated" });
     } catch (e) {
       return res.status(500).json({ message: "Failed to update user" });
-    }
-  }
-);
-
-// Admin: reset password
-router.post(
-  "/admin/users/:id/reset-password",
-  requireAuth,
-  requireRole("admin"),
-  async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const { password } = req.body || {};
-      if (!password || password.length < 6)
-        return res.status(400).json({ message: "Password too short" });
-      const hashed = await bcrypt.hash(password, 12);
-      await db
-        .update(users)
-        .set({ passwordHash: hashed })
-        .where(eq(users.id, id));
-      // Force logout: delete sessions
-      await db.delete(sessions).where(eq(sessions.userId, id));
-      return res.json({ message: "Password reset" });
-    } catch (e) {
-      return res.status(500).json({ message: "Failed to reset password" });
     }
   }
 );
