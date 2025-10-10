@@ -24,6 +24,7 @@ import {
   sendPasswordResetEmail,
   sendPasswordResetSuccessEmail,
 } from "../utils/mailer.js";
+import { sendMsg91OtpSms } from "../services/msg91.js";
 
 const router = express.Router();
 router.use(cookieParser());
@@ -33,6 +34,120 @@ router.post("/login", login);
 router.post("/logout", logout);
 router.post("/refresh", refresh);
 router.get("/me", requireAuth, me);
+
+// Phone: send OTP (no auth required)
+router.post("/phone/send-otp", async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) return res.status(400).json({ message: "Phone is required" });
+
+    // Rate limit attempts per phone (simple: delete expired records, count recent attempts)
+    const ttlMinutes = Number(process.env.PHONE_OTP_TTL_MIN || 10);
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const codeHash = sha256(code);
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+
+    // Store OTP record
+    await db.insert(phoneOtps).values({ phone, codeHash, expiresAt });
+
+    // Send via MSG91
+    const msg91Res = await sendMsg91OtpSms({
+      apiKey: process.env.MSG91_AUTHKEY,
+      templateId: process.env.MSG91_TEMPLATE_ID,
+      senderId: process.env.MSG91_SENDER_ID,
+      countryCode: process.env.MSG91_COUNTRY_CODE || "91",
+      phone,
+      code,
+    });
+
+    if (!msg91Res.success) {
+      return res.status(500).json({ message: "Failed to send OTP" });
+    }
+
+    return res.json({ message: "OTP sent" });
+  } catch (e) {
+    console.error("Send OTP error:", e);
+    return res.status(500).json({ message: "Failed to send OTP" });
+  }
+});
+
+// Phone: verify OTP (issues tokens, creates user if needed)
+router.post("/phone/verify-otp", async (req, res) => {
+  try {
+    const { phone, code } = req.body || {};
+    if (!phone || !code)
+      return res.status(400).json({ message: "Phone and code are required" });
+
+    // Find latest unused OTP for phone
+    const [otp] = await db
+      .select()
+      .from(phoneOtps)
+      .where(and(eq(phoneOtps.phone, phone), isNull(phoneOtps.usedAt)))
+      .orderBy(phoneOtps.id)
+      .limit(1);
+
+    if (!otp) return res.status(400).json({ message: "Invalid or used code" });
+    if (!(new Date(otp.expiresAt) > new Date()))
+      return res.status(400).json({ message: "Code expired" });
+    if (otp.codeHash !== sha256(String(code)))
+      return res.status(400).json({ message: "Incorrect code" });
+
+    // Mark OTP used
+    await db
+      .update(phoneOtps)
+      .set({ usedAt: new Date() })
+      .where(eq(phoneOtps.id, otp.id));
+
+    // Find or create user
+    let [u] = await db
+      .select()
+      .from(users)
+      .where(eq(users.phone, phone))
+      .limit(1);
+    if (!u) {
+      const result = await db
+        .insert(users)
+        .values({
+          phone,
+          status: "active",
+          role: "customer",
+          phoneVerifiedAt: new Date(),
+        })
+        .returning({ id: users.id });
+      const newId = result?.[0]?.id;
+      [u] = await db.select().from(users).where(eq(users.id, newId)).limit(1);
+    }
+
+    // Mark phone verified if not already
+    if (!u.phoneVerifiedAt) {
+      await db
+        .update(users)
+        .set({ phoneVerifiedAt: new Date() })
+        .where(eq(users.id, u.id));
+    }
+
+    // Issue tokens
+    const access = signAccessToken({ sub: u.id, role: u.role });
+    const refreshToken = signRefreshToken({ sub: u.id });
+    setRefreshCookie(res, refreshToken);
+
+    return res.json({
+      access,
+      user: {
+        id: u.id,
+        email: u.email,
+        phone: u.phone,
+        name: u.name,
+        role: u.role,
+        emailVerifiedAt: u.emailVerifiedAt,
+        phoneVerifiedAt: u.phoneVerifiedAt || new Date(),
+      },
+    });
+  } catch (e) {
+    console.error("Verify OTP error:", e);
+    return res.status(500).json({ message: "Failed to verify OTP" });
+  }
+});
 
 // Verify email using token (soft-gate)
 router.get("/verify-email", async (req, res) => {
