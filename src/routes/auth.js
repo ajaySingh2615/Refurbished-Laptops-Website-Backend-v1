@@ -9,9 +9,21 @@ import {
 } from "../controllers/authController.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/client.js";
-import { emailVerifications, users } from "../db/schema.js";
+import {
+  emailVerifications,
+  users,
+  passwordResets,
+  sessions,
+} from "../db/schema.js";
 import { eq, and, isNull } from "drizzle-orm";
 import { sha256 } from "../utils/crypto.js";
+import crypto from "crypto";
+import bcrypt from "bcrypt";
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
+} from "../utils/mailer.js";
 
 const router = express.Router();
 router.use(cookieParser());
@@ -92,9 +104,157 @@ router.post("/resend-verification", requireAuth, async (req, res) => {
     });
     const appUrl = process.env.APP_URL || "http://localhost:5173";
     const link = `${appUrl}/verify-email?token=${raw}`;
-    return res.json({ message: "Sent", link });
+
+    // Send the verification email using our new template
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const result = await sendVerificationEmail(email, link);
+        console.log("Verification email sent via Resend:", result);
+        return res.json({ message: "Verification email sent" });
+      } catch (e) {
+        console.error("Failed to send verification email:", e);
+        return res.status(500).json({ message: "Failed to send email" });
+      }
+    } else {
+      return res.json({ message: "Verification link", link });
+    }
   } catch (e) {
     return res.status(500).json({ message: "Failed to resend" });
+  }
+});
+
+// Forgot password - send reset link
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const [user] = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({
+        message: "If the email exists, a reset link has been sent",
+      });
+    }
+
+    // Delete any existing password reset tokens for this user
+    await db.delete(passwordResets).where(eq(passwordResets.userId, user.id));
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = sha256(token);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await db.insert(passwordResets).values({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    const resetLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${token}`;
+    console.log("Password reset link:", resetLink);
+
+    // Send email
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const result = await sendPasswordResetEmail(user.email, resetLink);
+        console.log("Password reset email sent:", result);
+        return res.json({ message: "Password reset link sent to your email" });
+      } catch (e) {
+        console.error("Failed to send password reset email:", e);
+        return res.status(500).json({ message: "Failed to send reset email" });
+      }
+    } else {
+      return res.json({ message: "Password reset link", link: resetLink });
+    }
+  } catch (e) {
+    console.error("Forgot password error:", e);
+    return res.status(500).json({ message: "Failed to process request" });
+  }
+});
+
+// Reset password with token
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res
+        .status(400)
+        .json({ message: "Token and password are required" });
+    }
+
+    if (password.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
+    }
+
+    const [resetRecord] = await db
+      .select()
+      .from(passwordResets)
+      .where(
+        and(
+          eq(passwordResets.tokenHash, sha256(token)),
+          isNull(passwordResets.usedAt)
+        )
+      )
+      .limit(1);
+
+    if (!resetRecord) {
+      return res
+        .status(400)
+        .json({ message: "Invalid or expired reset token" });
+    }
+
+    if (!(new Date(resetRecord.expiresAt) > new Date())) {
+      return res.status(400).json({ message: "Reset token has expired" });
+    }
+
+    // Get user email before updating password
+    const [user] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, resetRecord.userId))
+      .limit(1);
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Update user password
+    await db
+      .update(users)
+      .set({ passwordHash: hashedPassword })
+      .where(eq(users.id, resetRecord.userId));
+
+    // Mark token as used
+    await db
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResets.id, resetRecord.id));
+
+    // Invalidate all user sessions (force re-login)
+    await db.delete(sessions).where(eq(sessions.userId, resetRecord.userId));
+
+    // Send success email
+    if (user?.email && process.env.RESEND_API_KEY) {
+      try {
+        const result = await sendPasswordResetSuccessEmail(user.email);
+        console.log("Password reset success email sent:", result);
+      } catch (e) {
+        console.error("Failed to send success email:", e);
+        // Don't fail the request if email sending fails
+      }
+    }
+
+    console.log("Password reset successful for user:", resetRecord.userId);
+    return res.json({ message: "Password reset successfully" });
+  } catch (e) {
+    console.error("Reset password error:", e);
+    return res.status(500).json({ message: "Failed to reset password" });
   }
 });
 

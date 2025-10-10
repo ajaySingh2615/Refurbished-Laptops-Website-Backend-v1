@@ -18,7 +18,7 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import path from "path";
-import { sendMail } from "../utils/mailer.js";
+import { sendMail, sendVerificationEmail } from "../utils/mailer.js";
 
 function setRefreshCookie(res, token) {
   res.cookie("refresh_token", token, {
@@ -86,12 +86,7 @@ export const register = async (req, res) => {
         const link = `${appUrl}/verify-email?token=${raw}`;
         console.log("Verification link:", link);
 
-        const result = await sendMail({
-          to: u.email,
-          subject: "Verify your email",
-          text: `Click to verify: ${link}`,
-          html: `<p>Hi ${name || ""},</p><p>Verify your email by clicking the link below:</p><p><a href="${link}">Verify Email</a></p><p>This link expires in ${ttlHours} hours.</p>`,
-        });
+        const result = await sendVerificationEmail(u.email, link);
 
         console.log("Email send result:", result);
       } else {
