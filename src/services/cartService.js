@@ -9,7 +9,7 @@ import {
   savedCarts,
   cartCoupons,
 } from "../db/schema.js";
-import { eq, and, desc, sql, isNull, or } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, or, inArray } from "drizzle-orm";
 
 export class CartService {
   /**
@@ -325,35 +325,97 @@ export class CartService {
         )
         .where(eq(cartItems.cartId, cartId));
 
-      // Get primary product images
+      // Get all images for these products (both primary and non-primary)
       const productIds = items.map((item) => item.productId);
-      const images =
-        productIds.length > 0
-          ? await db
-              .select({
-                productId: productImages.productId,
-                cloudinaryUrl: productImages.cloudinaryUrl,
-                altText: productImages.altText,
-              })
-              .from(productImages)
-              .where(
-                and(
-                  sql`${productImages.productId} IN (${productIds.join(",")})`,
-                  eq(productImages.isPrimary, true)
-                )
-              )
-          : [];
+      console.log("Product IDs for images:", productIds);
+
+      // Get ALL images for these products first
+      const allImages = await db
+        .select({
+          productId: productImages.productId,
+          cloudinaryUrl: productImages.cloudinaryUrl,
+          altText: productImages.altText,
+          isPrimary: productImages.isPrimary,
+        })
+        .from(productImages)
+        .where(inArray(productImages.productId, productIds));
+
+      console.log("All images found:", allImages);
+
+      // Filter to get only primary images
+      const images = allImages.filter((img) => img.isPrimary === true);
+      console.log("Primary images only:", images);
+
+      // Log which products are missing images
+      const productsWithImages = images.map((img) => img.productId);
+      const productsWithoutImages = productIds.filter(
+        (id) => !productsWithImages.includes(id)
+      );
+
+      if (productsWithoutImages.length > 0) {
+        console.log(
+          "Products missing images in product_images table:",
+          productsWithoutImages
+        );
+
+        // Check if these products exist in the products table
+        const existingProducts = await db
+          .select({
+            id: products.id,
+            title: products.title,
+          })
+          .from(products)
+          .where(sql`${products.id} IN (${productsWithoutImages.join(",")})`);
+
+        console.log("Existing products without images:", existingProducts);
+
+        // Check if there are any images for these products (not just primary)
+        const allImagesForProducts = await db
+          .select({
+            productId: productImages.productId,
+            cloudinaryUrl: productImages.cloudinaryUrl,
+            altText: productImages.altText,
+            isPrimary: productImages.isPrimary,
+          })
+          .from(productImages)
+          .where(
+            sql`${productImages.productId} IN (${productsWithoutImages.join(",")})`
+          );
+
+        console.log("All images for missing products:", allImagesForProducts);
+      }
 
       // Attach images to items
-      const itemsWithImages = items.map((item) => ({
-        ...item,
-        image:
-          images.find((img) => img.productId === item.productId)
-            ?.cloudinaryUrl || null,
-        imageAlt:
-          images.find((img) => img.productId === item.productId)?.altText ||
-          null,
-      }));
+      const itemsWithImages = items.map((item) => {
+        const productImage = images.find(
+          (img) => img.productId === item.productId
+        );
+        console.log(`Product ${item.productId} image:`, productImage);
+        console.log(
+          `Product ${item.productId} image URL:`,
+          productImage?.cloudinaryUrl
+        );
+        console.log(
+          `Product ${item.productId} has image:`,
+          !!productImage?.cloudinaryUrl
+        );
+        return {
+          ...item,
+          image: productImage?.cloudinaryUrl || null,
+          imageAlt: productImage?.altText || null,
+        };
+      });
+
+      console.log(
+        "Final items with images:",
+        itemsWithImages.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          productTitle: item.productTitle,
+          image: item.image,
+          hasImage: !!item.image,
+        }))
+      );
 
       return {
         ...cart[0],
