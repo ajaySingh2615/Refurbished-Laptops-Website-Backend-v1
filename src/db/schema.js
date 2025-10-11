@@ -153,3 +153,21 @@ export const emailVerifications = mysqlTable("email_verifications", {
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const productImages = mysqlTable("product_images", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  cloudinaryPublicId: varchar("cloudinary_public_id", {
+    length: 255,
+  }).notNull(),
+  cloudinaryUrl: varchar("cloudinary_url", { length: 500 }).notNull(),
+  altText: varchar("alt_text", { length: 255 }).default(null),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  sortOrder: int("sort_order").notNull().default(0),
+  width: int("width").default(null),
+  height: int("height").default(null),
+  fileSize: int("file_size").default(null), // in bytes
+  mimeType: varchar("mime_type", { length: 64 }).default(null),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});

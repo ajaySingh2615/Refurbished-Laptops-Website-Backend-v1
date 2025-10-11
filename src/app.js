@@ -6,6 +6,7 @@ import brandRoutes from "./routes/brands.js";
 import healthRoutes from "./routes/health.js";
 import authRouters from "./routes/auth.js";
 import googleRoutes from "./routes/google.js";
+import imageRoutes from "./routes/images.js";
 import passport from "passport";
 import { configureGoogleStrategy } from "./passport/googleStrategy.js";
 
@@ -23,6 +24,7 @@ app.use("/health", healthRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/brands", brandRoutes);
+app.use("/api/images", imageRoutes);
 
 // API auth
 app.use("/api/auth", authRouters);

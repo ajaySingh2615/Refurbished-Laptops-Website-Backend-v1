@@ -229,7 +229,9 @@ export const searchProducts = async (req, res) => {
         or(
           like(products.title, `%${q}%`),
           like(products.brand, `%${q}%`),
-          like(products.cpu, `%${q}%`)
+          like(products.cpu, `%${q}%`),
+          like(products.sku, `%${q}%`),
+          eq(products.id, isNaN(Number(q)) ? -1 : Number(q))
         )
       );
 
