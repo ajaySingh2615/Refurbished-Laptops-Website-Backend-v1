@@ -10,10 +10,13 @@ export function requireAuth(req, res, next) {
     const claims = verifyAccess(token);
     req.user = claims;
     return next();
-  } catch {
+  } catch (error) {
     return res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// Export as authMiddleware for compatibility
+export const authMiddleware = requireAuth;
 
 export function requireRole(role) {
   return (req, res, next) => {

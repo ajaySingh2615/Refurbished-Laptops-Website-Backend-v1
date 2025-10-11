@@ -171,3 +171,48 @@ export const productImages = mysqlTable("product_images", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
+
+export const productReviews = mysqlTable("product_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  rating: int("rating").notNull(), // 1-5 stars
+  title: varchar("title", { length: 255 }).default(null),
+  review: text("review").default(null),
+  pros: text("pros").default(null), // JSON array of pros
+  cons: text("cons").default(null), // JSON array of cons
+  isVerifiedPurchase: boolean("is_verified_purchase").notNull().default(false),
+  isAnonymous: boolean("is_anonymous").notNull().default(false),
+  status: varchar("status", { length: 32 }).notNull().default("pending"), // pending, approved, rejected
+  adminNotes: text("admin_notes").default(null),
+  helpfulCount: int("helpful_count").notNull().default(0),
+  notHelpfulCount: int("not_helpful_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+  approvedAt: timestamp("approved_at").default(null),
+  rejectedAt: timestamp("rejected_at").default(null),
+});
+
+export const reviewHelpful = mysqlTable("review_helpful", {
+  id: int("id").autoincrement().primaryKey(),
+  reviewId: int("review_id").notNull(),
+  userId: int("user_id").notNull(),
+  isHelpful: boolean("is_helpful").notNull(), // true for helpful, false for not helpful
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const reviewImages = mysqlTable("review_images", {
+  id: int("id").autoincrement().primaryKey(),
+  reviewId: int("review_id").notNull(),
+  cloudinaryPublicId: varchar("cloudinary_public_id", {
+    length: 255,
+  }).notNull(),
+  cloudinaryUrl: varchar("cloudinary_url", { length: 500 }).notNull(),
+  altText: varchar("alt_text", { length: 255 }).default(null),
+  sortOrder: int("sort_order").notNull().default(0),
+  width: int("width").default(null),
+  height: int("height").default(null),
+  fileSize: int("file_size").default(null),
+  mimeType: varchar("mime_type", { length: 64 }).default(null),
+  createdAt: timestamp("created_at").defaultNow(),
+});
