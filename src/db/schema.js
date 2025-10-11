@@ -216,3 +216,104 @@ export const reviewImages = mysqlTable("review_images", {
   mimeType: varchar("mime_type", { length: 64 }).default(null),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Cart System Tables
+export const carts = mysqlTable("carts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").default(null), // null for guest carts
+  sessionId: varchar("session_id", { length: 191 }).default(null), // for guest carts
+  status: varchar("status", { length: 32 }).notNull().default("active"), // active, abandoned, converted, expired
+  currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  shippingAmount: decimal("shipping_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  itemCount: int("item_count").notNull().default(0),
+  appliedCouponCode: varchar("applied_coupon_code", { length: 64 }).default(
+    null
+  ),
+  shippingAddress: json("shipping_address").default(null),
+  billingAddress: json("billing_address").default(null),
+  notes: text("notes").default(null),
+  expiresAt: timestamp("expires_at").default(null), // cart expiration
+  lastAccessedAt: timestamp("last_accessed_at").defaultNow(),
+  convertedAt: timestamp("converted_at").default(null), // when cart becomes order
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const cartItems = mysqlTable("cart_items", {
+  id: int("id").autoincrement().primaryKey(),
+  cartId: int("cart_id").notNull(),
+  productId: int("product_id").notNull(),
+  productVariantId: int("product_variant_id").default(null), // null if no variant
+  quantity: int("quantity").notNull().default(1),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  unitMrp: decimal("unit_mrp", { precision: 10, scale: 2 }).default(null),
+  unitDiscountPercent: int("unit_discount_percent").default(0),
+  unitGstPercent: int("unit_gst_percent").default(18),
+  lineTotal: decimal("line_total", { precision: 10, scale: 2 }).notNull(),
+  lineTax: decimal("line_tax", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  lineDiscount: decimal("line_discount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  selectedAttributes: json("selected_attributes").default(null), // for variant selection
+  notes: text("notes").default(null), // item-specific notes
+  addedAt: timestamp("added_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+// Cart Abandonment Tracking
+export const cartAbandonment = mysqlTable("cart_abandonment", {
+  id: int("id").autoincrement().primaryKey(),
+  cartId: int("cart_id").notNull(),
+  userId: int("user_id").default(null),
+  email: varchar("email", { length: 191 }).default(null),
+  phone: varchar("phone", { length: 32 }).default(null),
+  abandonmentStage: varchar("abandonment_stage", { length: 32 }).notNull(), // viewed, added_item, checkout_started, payment_failed
+  reminderSent: boolean("reminder_sent").notNull().default(false),
+  reminderCount: int("reminder_count").notNull().default(0),
+  lastReminderSentAt: timestamp("last_reminder_sent_at").default(null),
+  recoveredAt: timestamp("recovered_at").default(null),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+// Saved Carts (Wishlist functionality)
+export const savedCarts = mysqlTable("saved_carts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description").default(null),
+  isPublic: boolean("is_public").notNull().default(false),
+  cartData: json("cart_data").notNull(), // serialized cart items
+  itemCount: int("item_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+// Cart Coupons/Discounts
+export const cartCoupons = mysqlTable("cart_coupons", {
+  id: int("id").autoincrement().primaryKey(),
+  cartId: int("cart_id").notNull(),
+  couponCode: varchar("coupon_code", { length: 64 }).notNull(),
+  discountType: varchar("discount_type", { length: 32 }).notNull(), // percentage, fixed_amount, free_shipping
+  discountValue: decimal("discount_value", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
+  appliedAt: timestamp("applied_at").defaultNow(),
+});

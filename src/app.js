@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import productRoutes from "./routes/products.js";
 import categoryRoutes from "./routes/categories.js";
 import brandRoutes from "./routes/brands.js";
@@ -8,6 +9,7 @@ import authRouters from "./routes/auth.js";
 import googleRoutes from "./routes/google.js";
 import imageRoutes from "./routes/images.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import cartRoutes from "./routes/cart.js";
 import passport from "passport";
 import { configureGoogleStrategy } from "./passport/googleStrategy.js";
 
@@ -15,6 +17,7 @@ const app = express();
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 configureGoogleStrategy();
 app.use(passport.initialize());
 
@@ -27,6 +30,7 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/cart", cartRoutes);
 
 // API auth
 app.use("/api/auth", authRouters);
