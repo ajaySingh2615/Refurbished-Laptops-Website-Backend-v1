@@ -6,7 +6,7 @@ import {
   users,
   products,
 } from "../db/schema.js";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, or, like, desc, asc, sql } from "drizzle-orm";
 
 export class ReviewService {
   // Get reviews for a product (approved only for public)
@@ -277,6 +277,7 @@ export class ReviewService {
       sortBy = "createdAt",
       sortOrder = "desc",
       productId = null,
+      search = null,
     } = options;
 
     let query = db
@@ -311,11 +312,24 @@ export class ReviewService {
 
     // Apply filters
     const conditions = [];
+
     if (status !== "all") {
       conditions.push(eq(productReviews.status, status));
     }
     if (productId) {
       conditions.push(eq(productReviews.productId, productId));
+    }
+    if (search) {
+      conditions.push(
+        or(
+          like(productReviews.title, `%${search}%`),
+          like(productReviews.review, `%${search}%`),
+          like(users.name, `%${search}%`),
+          like(users.email, `%${search}%`),
+          like(products.title, `%${search}%`),
+          like(products.brand, `%${search}%`)
+        )
+      );
     }
 
     if (conditions.length > 0) {

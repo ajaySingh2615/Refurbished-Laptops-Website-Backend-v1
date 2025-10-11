@@ -168,6 +168,7 @@ export const reviewController = {
         sortBy = "createdAt",
         sortOrder = "desc",
         productId = null,
+        search = null,
       } = req.query;
 
       const reviews = await reviewService.getAdminReviews({
@@ -177,6 +178,7 @@ export const reviewController = {
         sortBy,
         sortOrder,
         productId: productId ? parseInt(productId) : null,
+        search,
       });
 
       res.json({
