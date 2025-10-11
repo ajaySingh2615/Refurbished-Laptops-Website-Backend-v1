@@ -119,17 +119,35 @@ export class ReviewService {
         )
       );
 
-    return (
-      stats[0] || {
-        totalReviews: 0,
-        averageRating: 0,
-        rating1: 0,
-        rating2: 0,
-        rating3: 0,
-        rating4: 0,
-        rating5: 0,
-      }
-    );
+    const rawStats = stats[0];
+
+    // Handle null/undefined averageRating from database
+    let averageRating = rawStats?.averageRating
+      ? Number(rawStats.averageRating)
+      : 0;
+
+    // If averageRating is still 0 but we have reviews, calculate manually
+    if (averageRating === 0 && rawStats?.totalReviews > 0) {
+      const totalRating =
+        (rawStats.rating1 || 0) * 1 +
+        (rawStats.rating2 || 0) * 2 +
+        (rawStats.rating3 || 0) * 3 +
+        (rawStats.rating4 || 0) * 4 +
+        (rawStats.rating5 || 0) * 5;
+      averageRating = totalRating / (rawStats.totalReviews || 1);
+    }
+
+    const result = {
+      totalReviews: rawStats?.totalReviews || 0,
+      averageRating: averageRating,
+      rating1: rawStats?.rating1 || 0,
+      rating2: rawStats?.rating2 || 0,
+      rating3: rawStats?.rating3 || 0,
+      rating4: rawStats?.rating4 || 0,
+      rating5: rawStats?.rating5 || 0,
+    };
+
+    return result;
   }
 
   // Create a new review
