@@ -209,8 +209,11 @@ router.post(
         role = "customer",
         status = "active",
       } = req.body || {};
-      if (!email || !password)
+
+      if (!email || !password) {
         return res.status(400).json({ message: "Email and password required" });
+      }
+
       const hashed = await bcrypt.hash(password, 12);
       await db.insert(users).values({
         email,
