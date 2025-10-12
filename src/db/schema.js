@@ -305,15 +305,78 @@ export const savedCarts = mysqlTable("saved_carts", {
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
 
-// Cart Coupons/Discounts
+// Coupon System Tables
+export const coupons = mysqlTable("coupons", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description").default(null),
+  type: varchar("type", { length: 32 }).notNull(), // percentage, fixed_amount, free_shipping, buy_x_get_y
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(),
+  minOrderAmount: decimal("min_order_amount", {
+    precision: 10,
+    scale: 2,
+  }).default(0),
+  maxDiscountAmount: decimal("max_discount_amount", {
+    precision: 10,
+    scale: 2,
+  }).default(null),
+  usageLimit: int("usage_limit").default(null), // null = unlimited
+  usageCount: int("usage_count").notNull().default(0),
+  usageLimitPerUser: int("usage_limit_per_user").default(1),
+  isActive: boolean("is_active").notNull().default(true),
+  isPublic: boolean("is_public").notNull().default(true), // public coupons vs private/admin-only
+  validFrom: timestamp("valid_from").notNull(),
+  validUntil: timestamp("valid_until").notNull(),
+  applicableTo: varchar("applicable_to", { length: 32 })
+    .notNull()
+    .default("all"), // all, categories, products, brands
+  applicableCategories: json("applicable_categories").default(null), // array of category IDs
+  applicableProducts: json("applicable_products").default(null), // array of product IDs
+  applicableBrands: json("applicable_brands").default(null), // array of brand names
+  excludedCategories: json("excluded_categories").default(null),
+  excludedProducts: json("excluded_products").default(null),
+  excludedBrands: json("excluded_brands").default(null),
+  stackable: boolean("stackable").notNull().default(false), // can be used with other coupons
+  autoApply: boolean("auto_apply").notNull().default(false), // automatically apply if conditions met
+  priority: int("priority").notNull().default(0), // higher number = higher priority
+  createdBy: int("created_by").notNull(), // admin user ID
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const couponUsage = mysqlTable("coupon_usage", {
+  id: int("id").autoincrement().primaryKey(),
+  couponId: int("coupon_id").notNull(),
+  userId: int("user_id").default(null), // null for guest users
+  sessionId: varchar("session_id", { length: 191 }).default(null), // for guest users
+  orderId: int("order_id").default(null), // when order is created
+  cartId: int("cart_id").default(null), // for cart-level tracking
+  discountAmount: decimal("discount_amount", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
+  orderAmount: decimal("order_amount", { precision: 10, scale: 2 }).notNull(),
+  usedAt: timestamp("used_at").defaultNow(),
+  ip: varchar("ip", { length: 64 }).default(null),
+  userAgent: varchar("user_agent", { length: 255 }).default(null),
+});
+
+// Cart Coupons/Discounts (for applied coupons in cart)
 export const cartCoupons = mysqlTable("cart_coupons", {
   id: int("id").autoincrement().primaryKey(),
   cartId: int("cart_id").notNull(),
+  couponId: int("coupon_id").notNull(),
   couponCode: varchar("coupon_code", { length: 64 }).notNull(),
   discountType: varchar("discount_type", { length: 32 }).notNull(), // percentage, fixed_amount, free_shipping
   discountValue: decimal("discount_value", {
     precision: 10,
     scale: 2,
   }).notNull(),
+  discountAmount: decimal("discount_amount", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   appliedAt: timestamp("applied_at").defaultNow(),
+  appliedBy: int("applied_by").default(null), // user ID who applied the coupon
 });

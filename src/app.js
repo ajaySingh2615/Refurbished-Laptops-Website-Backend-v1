@@ -10,6 +10,7 @@ import googleRoutes from "./routes/google.js";
 import imageRoutes from "./routes/images.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import cartRoutes from "./routes/cart.js";
+import couponRoutes from "./routes/coupons.js";
 import passport from "passport";
 import { configureGoogleStrategy } from "./passport/googleStrategy.js";
 
@@ -31,6 +32,7 @@ app.use("/api/brands", brandRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/cart", cartRoutes);
+app.use("/api/coupons", couponRoutes);
 
 // API auth
 app.use("/api/auth", authRouters);

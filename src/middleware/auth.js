@@ -8,9 +8,12 @@ export function requireAuth(req, res, next) {
 
   try {
     const claims = verifyAccess(token);
+    console.log("Auth middleware - claims:", claims);
     req.user = claims;
+    console.log("Auth middleware - req.user set:", req.user);
     return next();
   } catch (error) {
+    console.log("Auth middleware - error:", error.message);
     return res.status(401).json({ message: "Invalid token" });
   }
 }
