@@ -144,11 +144,9 @@ export class CartService {
         unitGstPercent = variant[0].gstPercent || 18;
       }
 
-      // Calculate actual discount percentage from MRP vs Price
-      const unitDiscountPercent =
-        unitMrp && unitMrp > unitPrice
-          ? ((unitMrp - unitPrice) / unitMrp) * 100
-          : 0;
+      // Don't apply additional discounts - the price is already the selling price
+      // The discount percentage is only for display purposes, not for cart calculations
+      const unitDiscountPercent = 0;
 
       // Check if item already exists in cart
       const existingItem = await db
@@ -172,8 +170,8 @@ export class CartService {
       } else {
         // Add new item
         const lineTotal = unitPrice * quantity;
-        const lineDiscount = (lineTotal * unitDiscountPercent) / 100;
-        const lineTax = ((lineTotal - lineDiscount) * unitGstPercent) / 100;
+        const lineDiscount = 0; // No additional discounts
+        const lineTax = (lineTotal * unitGstPercent) / 100;
 
         await db.insert(cartItems).values({
           cartId,
@@ -237,15 +235,10 @@ export class CartService {
 
       const lineTotal = item[0].unitPrice * quantity;
 
-      // Recalculate discount percentage from stored MRP vs Price
-      const unitDiscountPercent =
-        item[0].unitMrp && item[0].unitMrp > item[0].unitPrice
-          ? ((item[0].unitMrp - item[0].unitPrice) / item[0].unitMrp) * 100
-          : 0;
-
-      const lineDiscount = (lineTotal * unitDiscountPercent) / 100;
-      const lineTax =
-        ((lineTotal - lineDiscount) * item[0].unitGstPercent) / 100;
+      // Don't apply additional discounts - the price is already the selling price
+      const unitDiscountPercent = 0;
+      const lineDiscount = 0;
+      const lineTax = (lineTotal * item[0].unitGstPercent) / 100;
 
       await db
         .update(cartItems)

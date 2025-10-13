@@ -447,7 +447,8 @@ export class CouponService {
     couponCode,
     cartId,
     userId = null,
-    sessionId = null
+    sessionId = null,
+    options = { skipUsageChecks: false, allowAlreadyApplied: false }
   ) {
     try {
       // Get coupon
@@ -486,8 +487,8 @@ export class CouponService {
         };
       }
 
-      // Check per-user usage limit
-      if (userId) {
+      // Check per-user usage limit (skip when only applying to cart)
+      if (!options?.skipUsageChecks && userId) {
         console.log(
           "🔍 Checking usage for user:",
           userId,
@@ -516,7 +517,7 @@ export class CouponService {
             message: "You have already used this coupon",
           };
         }
-      } else {
+      } else if (!options?.skipUsageChecks) {
         console.log("⚠️ No userId provided, checking session usage");
         if (sessionId) {
           const sessionUsage = await db
@@ -578,6 +579,14 @@ export class CouponService {
         );
 
       if (existingCoupon.length > 0) {
+        if (options?.allowAlreadyApplied) {
+          // Idempotent success when the same coupon is already on the cart
+          return {
+            success: true,
+            data: coupon,
+            message: "Coupon already applied to cart",
+          };
+        }
         return {
           success: false,
           message: "Coupon already applied to cart",
@@ -655,7 +664,8 @@ export class CouponService {
         couponCode,
         cartId,
         userId,
-        sessionId
+        sessionId,
+        { skipUsageChecks: true, allowAlreadyApplied: true }
       );
       if (!validation.success) {
         return validation;
@@ -699,32 +709,51 @@ export class CouponService {
           };
       }
 
-      // Apply coupon to cart
-      await db.insert(cartCoupons).values({
-        cartId,
-        couponId: coupon.id,
-        couponCode: coupon.code,
-        discountType: coupon.type,
-        discountValue: coupon.value,
-        discountAmount,
-        appliedBy: userId,
-      });
+      // Idempotent apply: update if exists, else insert
+      const existing = await db
+        .select()
+        .from(cartCoupons)
+        .where(
+          and(
+            eq(cartCoupons.cartId, cartId),
+            eq(cartCoupons.couponId, coupon.id)
+          )
+        )
+        .limit(1);
 
-      // Update coupon usage count
-      await db
-        .update(coupons)
-        .set({ usageCount: sql`${coupons.usageCount} + 1` })
-        .where(eq(coupons.id, coupon.id));
+      if (existing.length > 0) {
+        await db
+          .update(cartCoupons)
+          .set({
+            discountAmount,
+            discountValue: coupon.value,
+            discountType: coupon.type,
+          })
+          .where(eq(cartCoupons.id, existing[0].id));
+      } else {
+        await db.insert(cartCoupons).values({
+          cartId,
+          couponId: coupon.id,
+          couponCode: coupon.code,
+          discountType: coupon.type,
+          discountValue: coupon.value,
+          discountAmount,
+          appliedBy: userId,
+        });
+      }
 
-      // Record coupon usage
-      await db.insert(couponUsage).values({
-        couponId: coupon.id,
-        userId,
-        sessionId,
-        cartId,
-        discountAmount,
-        orderAmount: cartData.subtotal,
-      });
+      // Optionally reflect the last applied coupon code on the cart for quick reads
+      try {
+        await db
+          .update(carts)
+          .set({ appliedCouponCode: coupon.code })
+          .where(eq(carts.id, cartId));
+      } catch (e) {
+        // best-effort; ignore if the column isn't used
+      }
+
+      // IMPORTANT: Do not record usage or increment usageCount at apply-to-cart time.
+      // Usage should be recorded only when an order is successfully placed.
 
       // Recalculate cart totals
       await this.recalculateCartTotals(cartId);
@@ -742,6 +771,71 @@ export class CouponService {
       return {
         success: false,
         message: "Failed to apply coupon",
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Record coupon usage at order placement time.
+   * This consumes usage limits and writes to coupon_usage for all coupons on the cart.
+   */
+  static async recordUsageForOrder(
+    orderId,
+    cartId,
+    userId = null,
+    sessionId = null
+  ) {
+    try {
+      // Get cart totals for recording orderAmount
+      const cartRows = await db
+        .select()
+        .from(carts)
+        .where(eq(carts.id, cartId))
+        .limit(1);
+      if (cartRows.length === 0) {
+        return { success: false, message: "Cart not found" };
+      }
+      const cartRow = cartRows[0];
+
+      // Get applied coupons for this cart
+      const applied = await db
+        .select()
+        .from(cartCoupons)
+        .where(eq(cartCoupons.cartId, cartId));
+
+      if (applied.length === 0) {
+        return { success: true, message: "No coupons to record" };
+      }
+
+      // Record usage for each applied coupon
+      for (const cc of applied) {
+        await db.insert(couponUsage).values({
+          couponId: cc.couponId,
+          userId,
+          sessionId,
+          orderId,
+          cartId,
+          discountAmount: cc.discountAmount,
+          orderAmount: cartRow.subtotal,
+        });
+
+        // Increment coupon usage count
+        await db
+          .update(coupons)
+          .set({ usageCount: sql`${coupons.usageCount} + 1` })
+          .where(eq(coupons.id, cc.couponId));
+      }
+
+      // Clear coupons from cart after successful recording
+      await db.delete(cartCoupons).where(eq(cartCoupons.cartId, cartId));
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error recording coupon usage for order:", error);
+      return {
+        success: false,
+        message: "Failed to record coupon usage",
         error: error.message,
       };
     }
