@@ -7,8 +7,6 @@ export class CouponController {
   static async createCoupon(req, res) {
     try {
       const adminUserId = req.user.id;
-      console.log("Admin user ID:", adminUserId);
-      console.log("Request user:", req.user);
       const couponData = req.body;
 
       // Validate required fields
@@ -315,6 +313,30 @@ export class CouponController {
       }
     } catch (error) {
       console.error("Error in getCouponAnalytics:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  /**
+   * Clear all coupons from cart (for debugging)
+   */
+  static async clearAllCouponsFromCart(req, res) {
+    try {
+      const { cartId } = req.params;
+      const result = await CouponService.clearAllCouponsFromCart(
+        parseInt(cartId)
+      );
+
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error("Error in clearAllCouponsFromCart:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

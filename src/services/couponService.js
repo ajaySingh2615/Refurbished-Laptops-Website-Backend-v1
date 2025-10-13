@@ -27,8 +27,6 @@ export class CouponService {
    */
   static async createCoupon(couponData, adminUserId) {
     try {
-      console.log("CouponService - adminUserId:", adminUserId);
-      console.log("CouponService - couponData:", couponData);
       // Clean up data - convert empty strings to null for decimal fields
       const cleanDecimalField = (value) => {
         if (value === "" || value === null || value === undefined) {
@@ -134,6 +132,29 @@ export class CouponService {
       };
     } catch (error) {
       console.error("Error creating coupon:", error);
+
+      // Handle all duplicate entry errors (catch any variation)
+      const errorString = error.toString().toLowerCase();
+      const errorMessage = (error.message || "").toLowerCase();
+      const causeMessage = (error.cause?.sqlMessage || "").toLowerCase();
+      const causeCode = error.cause?.code;
+
+      if (
+        error.code === "ER_DUP_ENTRY" ||
+        causeCode === "ER_DUP_ENTRY" ||
+        errorString.includes("duplicate") ||
+        errorMessage.includes("duplicate") ||
+        causeMessage.includes("duplicate") ||
+        errorString.includes("unique") ||
+        causeMessage.includes("unique")
+      ) {
+        return {
+          success: false,
+          message: `Coupon code '${couponData.code}' already exists. Please choose a different code.`,
+          error: "DUPLICATE_CODE",
+        };
+      }
+
       return {
         success: false,
         message: "Failed to create coupon",
@@ -467,6 +488,12 @@ export class CouponService {
 
       // Check per-user usage limit
       if (userId) {
+        console.log(
+          "🔍 Checking usage for user:",
+          userId,
+          "coupon:",
+          coupon.id
+        );
         const userUsage = await db
           .select({ count: sql`count(*)` })
           .from(couponUsage)
@@ -477,11 +504,38 @@ export class CouponService {
             )
           );
 
+        console.log(
+          "📊 User usage count:",
+          userUsage[0].count,
+          "limit:",
+          coupon.usageLimitPerUser
+        );
         if (userUsage[0].count >= coupon.usageLimitPerUser) {
           return {
             success: false,
             message: "You have already used this coupon",
           };
+        }
+      } else {
+        console.log("⚠️ No userId provided, checking session usage");
+        if (sessionId) {
+          const sessionUsage = await db
+            .select({ count: sql`count(*)` })
+            .from(couponUsage)
+            .where(
+              and(
+                eq(couponUsage.couponId, coupon.id),
+                eq(couponUsage.sessionId, sessionId)
+              )
+            );
+
+          console.log("📊 Session usage count:", sessionUsage[0].count);
+          if (sessionUsage[0].count >= coupon.usageLimitPerUser) {
+            return {
+              success: false,
+              message: "You have already used this coupon",
+            };
+          }
         }
       }
 
@@ -502,10 +556,13 @@ export class CouponService {
       const cartData = cart[0];
 
       // Check minimum order amount
-      if (cartData.subtotal < coupon.minOrderAmount) {
+      const cartSubtotal = parseFloat(cartData.subtotal);
+      const minOrderAmount = parseFloat(coupon.minOrderAmount);
+
+      if (cartSubtotal < minOrderAmount) {
         return {
           success: false,
-          message: `Minimum order amount of ₹${coupon.minOrderAmount} required`,
+          message: `Minimum order amount of ₹${minOrderAmount} required`,
         };
       }
 
@@ -535,9 +592,12 @@ export class CouponService {
           .where(eq(cartCoupons.cartId, cartId));
 
         if (appliedCoupons.length > 0) {
+          const appliedCouponCodes = appliedCoupons
+            .map((c) => c.couponCode)
+            .join(", ");
           return {
             success: false,
-            message: "This coupon cannot be used with other coupons",
+            message: `This coupon cannot be used with other coupons. Please remove the existing coupon(s): ${appliedCouponCodes}`,
           };
         }
       }
@@ -613,21 +673,24 @@ export class CouponService {
       const cartData = cart[0];
       let discountAmount = 0;
 
+      const cartSubtotal = parseFloat(cartData.subtotal);
+      const couponValue = parseFloat(coupon.value);
+
       switch (coupon.type) {
         case "percentage":
-          discountAmount = (cartData.subtotal * coupon.value) / 100;
+          discountAmount = (cartSubtotal * couponValue) / 100;
           if (
             coupon.maxDiscountAmount &&
-            discountAmount > coupon.maxDiscountAmount
+            discountAmount > parseFloat(coupon.maxDiscountAmount)
           ) {
-            discountAmount = coupon.maxDiscountAmount;
+            discountAmount = parseFloat(coupon.maxDiscountAmount);
           }
           break;
         case "fixed_amount":
-          discountAmount = coupon.value;
+          discountAmount = couponValue;
           break;
         case "free_shipping":
-          discountAmount = cartData.shippingAmount || 0;
+          discountAmount = parseFloat(cartData.shippingAmount) || 0;
           break;
         default:
           return {
@@ -687,16 +750,13 @@ export class CouponService {
   /**
    * Remove coupon from cart
    */
-  static async removeCoupon(couponId, cartId) {
+  static async removeCoupon(cartCouponId, cartId) {
     try {
-      // Remove coupon from cart
+      // Remove coupon from cart using cart coupon ID
       await db
         .delete(cartCoupons)
         .where(
-          and(
-            eq(cartCoupons.cartId, cartId),
-            eq(cartCoupons.couponId, couponId)
-          )
+          and(eq(cartCoupons.cartId, cartId), eq(cartCoupons.id, cartCouponId))
         );
 
       // Recalculate cart totals
@@ -711,6 +771,31 @@ export class CouponService {
       return {
         success: false,
         message: "Failed to remove coupon",
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Clear all coupons from cart (for debugging)
+   */
+  static async clearAllCouponsFromCart(cartId) {
+    try {
+      // Remove all coupons from cart
+      await db.delete(cartCoupons).where(eq(cartCoupons.cartId, cartId));
+
+      // Recalculate cart totals
+      await this.recalculateCartTotals(cartId);
+
+      return {
+        success: true,
+        message: "All coupons cleared from cart",
+      };
+    } catch (error) {
+      console.error("Error clearing coupons:", error);
+      return {
+        success: false,
+        message: "Failed to clear coupons",
         error: error.message,
       };
     }

@@ -31,6 +31,7 @@ export class CartService {
           // Create new cart for authenticated user
           const insertResult = await db.insert(carts).values({
             userId,
+            sessionId: sessionId, // Include session ID for authenticated users
             status: "active",
             currency: "INR",
             expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
@@ -43,6 +44,22 @@ export class CartService {
             .where(and(eq(carts.userId, userId), eq(carts.status, "active")))
             .limit(1);
           cart = newCart;
+        } else {
+          // Update existing cart with session ID if it's missing
+          if (cart[0].sessionId === null && sessionId) {
+            await db
+              .update(carts)
+              .set({ sessionId: sessionId })
+              .where(eq(carts.id, cart[0].id));
+
+            // Get the updated cart
+            const updatedCart = await db
+              .select()
+              .from(carts)
+              .where(eq(carts.id, cart[0].id))
+              .limit(1);
+            cart = updatedCart;
+          }
         }
       } else if (sessionId) {
         // Look for existing active cart for guest user
@@ -108,7 +125,6 @@ export class CartService {
 
       let unitPrice = product[0].price;
       let unitMrp = product[0].mrp;
-      let unitDiscountPercent = product[0].discountPercent || 0;
       let unitGstPercent = product[0].gstPercent || 18;
 
       // If variant is selected, get variant pricing
@@ -125,9 +141,14 @@ export class CartService {
 
         unitPrice = variant[0].price;
         unitMrp = variant[0].mrp;
-        unitDiscountPercent = variant[0].discountPercent || 0;
         unitGstPercent = variant[0].gstPercent || 18;
       }
+
+      // Calculate actual discount percentage from MRP vs Price
+      const unitDiscountPercent =
+        unitMrp && unitMrp > unitPrice
+          ? ((unitMrp - unitPrice) / unitMrp) * 100
+          : 0;
 
       // Check if item already exists in cart
       const existingItem = await db
@@ -215,7 +236,14 @@ export class CartService {
       }
 
       const lineTotal = item[0].unitPrice * quantity;
-      const lineDiscount = (lineTotal * item[0].unitDiscountPercent) / 100;
+
+      // Recalculate discount percentage from stored MRP vs Price
+      const unitDiscountPercent =
+        item[0].unitMrp && item[0].unitMrp > item[0].unitPrice
+          ? ((item[0].unitMrp - item[0].unitPrice) / item[0].unitMrp) * 100
+          : 0;
+
+      const lineDiscount = (lineTotal * unitDiscountPercent) / 100;
       const lineTax =
         ((lineTotal - lineDiscount) * item[0].unitGstPercent) / 100;
 
@@ -417,9 +445,24 @@ export class CartService {
         }))
       );
 
+      // Get applied coupons for this cart
+      const appliedCoupons = await db
+        .select({
+          id: cartCoupons.id,
+          couponId: cartCoupons.couponId,
+          couponCode: cartCoupons.couponCode,
+          discountType: cartCoupons.discountType,
+          discountValue: cartCoupons.discountValue,
+          discountAmount: cartCoupons.discountAmount,
+          appliedAt: cartCoupons.appliedAt,
+        })
+        .from(cartCoupons)
+        .where(eq(cartCoupons.cartId, cartId));
+
       return {
         ...cart[0],
         items: itemsWithImages,
+        appliedCoupons: appliedCoupons,
       };
     } catch (error) {
       console.error("Error getting cart with items:", error);
@@ -437,34 +480,61 @@ export class CartService {
         .from(cartItems)
         .where(eq(cartItems.cartId, cartId));
 
+      // Get applied coupons for this cart
+      const appliedCoupons = await db
+        .select()
+        .from(cartCoupons)
+        .where(eq(cartCoupons.cartId, cartId));
+
+      // Calculate subtotal (sum of line totals)
       const subtotal = items.reduce(
         (sum, item) => sum + parseFloat(item.lineTotal),
         0
       );
+
+      // Calculate tax amount
       const taxAmount = items.reduce(
         (sum, item) => sum + parseFloat(item.lineTax),
         0
       );
-      const discountAmount = items.reduce(
+
+      // Calculate product-level discounts (from lineDiscount)
+      const productDiscountAmount = items.reduce(
         (sum, item) => sum + parseFloat(item.lineDiscount),
         0
       );
+
+      // Calculate coupon discounts
+      const couponDiscountAmount = appliedCoupons.reduce(
+        (sum, coupon) => sum + parseFloat(coupon.discountAmount),
+        0
+      );
+
+      // Total discount = product discounts + coupon discounts
+      const totalDiscountAmount = productDiscountAmount + couponDiscountAmount;
+
       const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-      const totalAmount = subtotal + taxAmount - discountAmount;
+      const totalAmount = subtotal + taxAmount - totalDiscountAmount;
 
       await db
         .update(carts)
         .set({
-          subtotal,
-          taxAmount,
-          discountAmount,
-          totalAmount,
+          subtotal: subtotal.toString(),
+          taxAmount: taxAmount.toString(),
+          discountAmount: totalDiscountAmount.toString(),
+          totalAmount: totalAmount.toString(),
           itemCount,
           updatedAt: new Date(),
         })
         .where(eq(carts.id, cartId));
 
-      return { subtotal, taxAmount, discountAmount, totalAmount, itemCount };
+      return {
+        subtotal,
+        taxAmount,
+        discountAmount: totalDiscountAmount,
+        totalAmount,
+        itemCount,
+      };
     } catch (error) {
       console.error("Error updating cart totals:", error);
       throw error;

@@ -1,18 +1,49 @@
 import { v4 as uuidv4 } from "uuid";
+import { verifyAccess } from "../utils/jwt.js";
 
 /**
- * Middleware to handle cart sessions for guest users
+ * Middleware to handle cart sessions for both authenticated and guest users
  * This ensures every request has either a userId (authenticated) or sessionId (guest)
  */
 export const cartSession = (req, res, next) => {
   try {
-    // If user is authenticated, use their userId
-    if (req.user && req.user.id) {
-      req.user = {
-        userId: req.user.id,
-        sessionId: null,
-      };
-      return next();
+    // Check for authentication token first
+    const hdr = req.headers.authorization || "";
+    const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+
+    if (token) {
+      try {
+        // User is authenticated
+        const claims = verifyAccess(token);
+
+        // Get or create session ID for authenticated user
+        let sessionId = req.headers["x-session-id"] || req.cookies?.sessionId;
+
+        if (!sessionId) {
+          // Generate new session ID only if none exists
+          sessionId = `user_${claims.sub}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+          // Set cookie for future requests
+          res.cookie("sessionId", sessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          });
+        }
+
+        req.user = {
+          userId: claims.sub, // sub is the user ID in JWT
+          sessionId: sessionId,
+        };
+        return next();
+      } catch (error) {
+        console.log(
+          "Cart session - invalid token, treating as guest:",
+          error.message
+        );
+        // Invalid token, treat as guest
+      }
     }
 
     // For guest users, check for existing session or create new one

@@ -40,5 +40,10 @@ router.delete(
   cartSession,
   CouponController.removeCoupon
 );
+router.delete(
+  "/clear/:cartId",
+  cartSession,
+  CouponController.clearAllCouponsFromCart
+);
 
 export default router;
