@@ -1,6 +1,12 @@
 import { db } from "../db/client.js";
-import { orders, orderItems, addresses } from "../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import {
+  orders,
+  orderItems,
+  addresses,
+  productImages,
+  products,
+} from "../db/schema.js";
+import { eq, desc, asc } from "drizzle-orm";
 
 export class OrdersController {
   static async list(req, res) {
@@ -18,7 +24,7 @@ export class OrdersController {
         .where(eq(orders.userId, userId))
         .orderBy(desc(orders.createdAt));
 
-      // Fetch shipping addresses and item counts for each order
+      // Fetch shipping addresses, item counts, and a preview image/title per order
       const ordersWithDetails = await Promise.all(
         userOrders.map(async (order) => {
           const items = await db
@@ -36,10 +42,48 @@ export class OrdersController {
               )[0]
             : null;
 
+          // One preview item and image
+          let previewTitle = null;
+          let previewImageUrl = null;
+          const firstItem = items[0];
+          if (firstItem) {
+            previewTitle = firstItem.title || null;
+            // Try to use product title if missing
+            if (!previewTitle && firstItem.productId) {
+              const prod = (
+                await db
+                  .select()
+                  .from(products)
+                  .where(eq(products.id, firstItem.productId))
+                  .limit(1)
+              )[0];
+              if (prod?.title) previewTitle = prod.title;
+            }
+            if (firstItem.productId) {
+              // Prefer primary image, fall back to any image
+              const primaryImg = (
+                await db
+                  .select()
+                  .from(productImages)
+                  .where(eq(productImages.productId, firstItem.productId))
+                  .orderBy(
+                    desc(productImages.isPrimary),
+                    asc(productImages.sortOrder),
+                    asc(productImages.id)
+                  )
+                  .limit(1)
+              )[0];
+              if (primaryImg?.cloudinaryUrl)
+                previewImageUrl = primaryImg.cloudinaryUrl;
+            }
+          }
+
           return {
             ...order,
             itemCount: items.length,
             shippingAddress,
+            previewTitle,
+            previewImageUrl,
           };
         })
       );
@@ -66,10 +110,43 @@ export class OrdersController {
           .status(404)
           .json({ success: false, message: "Order not found" });
       const ord = rows[0];
-      const items = await db
+      const itemsRaw = await db
         .select()
         .from(orderItems)
         .where(eq(orderItems.orderId, ord.id));
+      // Attach image and title for each item
+      const items = await Promise.all(
+        itemsRaw.map(async (it) => {
+          let imageUrl = null;
+          let title = it.title || null;
+          if (!title && it.productId) {
+            const prod = (
+              await db
+                .select()
+                .from(products)
+                .where(eq(products.id, it.productId))
+                .limit(1)
+            )[0];
+            if (prod?.title) title = prod.title;
+          }
+          if (it.productId) {
+            const img = (
+              await db
+                .select()
+                .from(productImages)
+                .where(eq(productImages.productId, it.productId))
+                .orderBy(
+                  desc(productImages.isPrimary),
+                  asc(productImages.sortOrder),
+                  asc(productImages.id)
+                )
+                .limit(1)
+            )[0];
+            if (img?.cloudinaryUrl) imageUrl = img.cloudinaryUrl;
+          }
+          return { ...it, title, imageUrl };
+        })
+      );
       const billing = ord.billingAddressId
         ? (
             await db
