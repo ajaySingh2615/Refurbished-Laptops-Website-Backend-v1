@@ -342,7 +342,25 @@ export class CheckoutService {
       ctx.sessionId
     );
 
-    return { success: true, data: { orderId } };
+    // Clear cart items after successful order
+    await db.delete(cartItems).where(eq(cartItems.cartId, order.cartId));
+
+    // Update cart status to converted
+    await db
+      .update(carts)
+      .set({
+        status: "converted",
+        convertedAt: new Date(),
+        itemCount: 0,
+        subtotal: 0,
+        taxAmount: 0,
+        discountAmount: 0,
+        shippingAmount: 0,
+        totalAmount: 0,
+      })
+      .where(eq(carts.id, order.cartId));
+
+    return { success: true, data: { orderId, orderNumber: order.orderNumber } };
   }
 
   static async cancel(input) {
