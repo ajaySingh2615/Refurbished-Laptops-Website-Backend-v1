@@ -9,11 +9,44 @@ import {
   payments,
   products,
 } from "../db/schema.js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { CartService } from "./cartService.js";
 import { CouponService } from "./couponService.js";
 
 export class CheckoutService {
+  static sanitizeAddressInput(input, type, userId) {
+    if (!input) return null;
+    // If an existing address is selected, reuse id
+    if (input.id) {
+      return { id: Number(input.id) };
+    }
+    // Only allow these fields to be inserted
+    const payload = {
+      userId: Number(userId),
+      type: type || "shipping",
+      name: String(input.name || ""),
+      phone: String(input.phone || ""),
+      email: input.email ? String(input.email) : null,
+      line1: String(input.line1 || ""),
+      line2: input.line2 ? String(input.line2) : null,
+      city: String(input.city || ""),
+      state: String(input.state || ""),
+      postcode: String(input.postcode || ""),
+      country: String(input.country || "IN"),
+      isDefault: !!input.isDefault,
+    };
+    // Guard: require minimal fields; otherwise skip creating a new address
+    const requiredFilled =
+      payload.name &&
+      payload.phone &&
+      payload.line1 &&
+      payload.city &&
+      payload.state &&
+      payload.postcode;
+    if (!requiredFilled) return null;
+    return { payload };
+  }
+
   static async init(input, ctx) {
     const { cartId, billingAddress, shippingAddress, shippingMethod } = input;
     const { userId, sessionId } = ctx;
@@ -49,28 +82,39 @@ export class CheckoutService {
       }
     }
 
-    // Persist addresses
-    const billingAddrId = billingAddress
-      ? (
-          await db
-            .insert(addresses)
-            .values({ ...billingAddress, userId, type: "billing" })
-        ).insertId
-      : null;
-    const shippingAddrId = shippingAddress
-      ? (
-          await db
-            .insert(addresses)
-            .values({ ...shippingAddress, userId, type: "shipping" })
-        ).insertId
-      : null;
+    // Persist addresses (reuse existing or insert sanitized)
+    let billingAddrId = null;
+    if (billingAddress) {
+      const b = this.sanitizeAddressInput(billingAddress, "billing", userId);
+      if (b?.id) billingAddrId = b.id;
+      else if (b?.payload)
+        billingAddrId = (await db.insert(addresses).values(b.payload)).insertId;
+    }
+    let shippingAddrId = null;
+    if (shippingAddress) {
+      const s = this.sanitizeAddressInput(shippingAddress, "shipping", userId);
+      if (s?.id) shippingAddrId = s.id;
+      else if (s?.payload)
+        shippingAddrId = (await db.insert(addresses).values(s.payload))
+          .insertId;
+    }
+    // Require a delivery address
+    if (!shippingAddrId) {
+      return {
+        success: false,
+        message: "Select a delivery address or add a new one before checkout",
+      };
+    }
 
     // Create order snapshot
+    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     const orderInsert = await db.insert(orders).values({
       userId,
       cartId,
       status: "pending",
+      orderStatus: "pending",
       paymentStatus: "unpaid",
+      orderNumber,
       subtotal: cart.subtotal,
       discountAmount: cart.discountAmount,
       taxAmount: cart.taxAmount,
@@ -81,11 +125,25 @@ export class CheckoutService {
       billingAddressId: billingAddrId,
       shippingAddressId: shippingAddrId,
     });
+    // Resolve a reliable orderId across environments
+    let createdOrderId = orderInsert?.insertId;
+    if (!createdOrderId) {
+      const latest = await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(and(eq(orders.cartId, cartId), eq(orders.userId, userId)))
+        .orderBy(desc(orders.id))
+        .limit(1);
+      createdOrderId = latest?.[0]?.id;
+    }
+    if (!createdOrderId) {
+      return { success: false, message: "Failed to create order" };
+    }
 
     // Copy items
     for (const it of items) {
       await db.insert(orderItems).values({
-        orderId: orderInsert.insertId,
+        orderId: createdOrderId,
         productId: it.productId,
         productVariantId: it.productVariantId,
         title: "", // could join to fill; optional for now
@@ -103,7 +161,8 @@ export class CheckoutService {
     return {
       success: true,
       data: {
-        orderId: orderInsert.insertId,
+        orderId: createdOrderId,
+        orderNumber,
         totals: {
           subtotal: cart.subtotal,
           discountAmount: cart.discountAmount,
@@ -118,6 +177,16 @@ export class CheckoutService {
   static async pay(input, ctx) {
     const { orderId, paymentMethod } = input;
     if (paymentMethod === "cod") {
+      // Update order with COD payment method
+      await db
+        .update(orders)
+        .set({
+          paymentMethod: "cod",
+          paymentStatus: "authorized",
+          orderStatus: "confirmed",
+          codCollected: false,
+        })
+        .where(eq(orders.id, orderId));
       // Confirm immediately
       const confirm = await this.confirm(
         { orderId, providerPayload: { method: "cod" } },
@@ -142,7 +211,7 @@ export class CheckoutService {
         return { success: false, message: "Razorpay not configured" };
 
       const amountPaise = Math.round(parseFloat(ord.totalAmount) * 100);
-      const receipt = `order_${ord.id}_${Date.now()}`;
+      const receipt = ord.orderNumber || `order_${ord.id}_${Date.now()}`;
 
       const rpRes = await fetch("https://api.razorpay.com/v1/orders", {
         method: "POST",
@@ -166,6 +235,15 @@ export class CheckoutService {
         };
       }
       const rpOrder = await rpRes.json();
+
+      // Store razorpay_order_id and payment_method in orders table
+      await db
+        .update(orders)
+        .set({
+          razorpayOrderId: rpOrder.id,
+          paymentMethod: "razorpay",
+        })
+        .where(eq(orders.id, orderId));
 
       await db.insert(payments).values({
         orderId,
@@ -215,6 +293,15 @@ export class CheckoutService {
       if (hmac !== providerPayload.razorpay_signature) {
         return { success: false, message: "Invalid payment signature" };
       }
+      // Store payment_id and transaction_id from Razorpay
+      await db
+        .update(orders)
+        .set({
+          paymentId: providerPayload.razorpay_payment_id,
+          transactionId: providerPayload.razorpay_payment_id,
+          paymentRef: providerPayload.razorpay_payment_id,
+        })
+        .where(eq(orders.id, orderId));
     }
 
     // Reduce stock
@@ -239,7 +326,12 @@ export class CheckoutService {
     // Mark order confirmed/paid
     await db
       .update(orders)
-      .set({ status: "confirmed", paymentStatus: "paid" })
+      .set({
+        status: "confirmed",
+        orderStatus: "confirmed",
+        paymentStatus: "paid",
+        placedAt: new Date(),
+      })
       .where(eq(orders.id, orderId));
 
     // Record coupon usage and clear coupons from cart

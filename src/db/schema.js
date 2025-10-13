@@ -410,6 +410,14 @@ export const orders = mysqlTable("orders", {
     .default("unpaid"), // unpaid, paid, failed, refunded
   paymentProvider: varchar("payment_provider", { length: 64 }).default(null),
   paymentRef: varchar("payment_ref", { length: 191 }).default(null),
+  // New fields for Razorpay integration and order tracking
+  orderNumber: varchar("order_number", { length: 64 }).default(null),
+  paymentMethod: varchar("payment_method", { length: 32 }).default(null), // cod | razorpay
+  paymentId: varchar("payment_id", { length: 191 }).default(null),
+  razorpayOrderId: varchar("razorpay_order_id", { length: 191 }).default(null),
+  transactionId: varchar("transaction_id", { length: 191 }).default(null),
+  codCollected: boolean("cod_collected").notNull().default(false),
+  orderStatus: varchar("order_status", { length: 32 }).default(null),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 })
     .notNull()
     .default(0),
