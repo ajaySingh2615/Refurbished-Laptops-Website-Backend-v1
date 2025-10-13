@@ -380,3 +380,90 @@ export const cartCoupons = mysqlTable("cart_coupons", {
   appliedAt: timestamp("applied_at").defaultNow(),
   appliedBy: int("applied_by").default(null), // user ID who applied the coupon
 });
+
+// Orders
+export const addresses = mysqlTable("addresses", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").default(null),
+  type: varchar("type", { length: 16 }).notNull(), // billing | shipping
+  name: varchar("name", { length: 128 }).notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  email: varchar("email", { length: 191 }).default(null),
+  line1: varchar("line1", { length: 255 }).notNull(),
+  line2: varchar("line2", { length: 255 }).default(null),
+  city: varchar("city", { length: 128 }).notNull(),
+  state: varchar("state", { length: 128 }).notNull(),
+  postcode: varchar("postcode", { length: 16 }).notNull(),
+  country: varchar("country", { length: 64 }).notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const orders = mysqlTable("orders", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").default(null),
+  cartId: int("cart_id").notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("pending"), // pending, confirmed, cancelled, failed
+  paymentStatus: varchar("payment_status", { length: 32 })
+    .notNull()
+    .default("unpaid"), // unpaid, paid, failed, refunded
+  paymentProvider: varchar("payment_provider", { length: 64 }).default(null),
+  paymentRef: varchar("payment_ref", { length: 191 }).default(null),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  shippingAmount: decimal("shipping_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+  shippingMethod: varchar("shipping_method", { length: 64 }).default(null),
+  notes: text("notes").default(null),
+  placedAt: timestamp("placed_at").default(null),
+  billingAddressId: int("billing_address_id").default(null),
+  shippingAddressId: int("shipping_address_id").default(null),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+export const orderItems = mysqlTable("order_items", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("order_id").notNull(),
+  productId: int("product_id").notNull(),
+  productVariantId: int("product_variant_id").default(null),
+  title: varchar("title", { length: 255 }).notNull(),
+  sku: varchar("sku", { length: 128 }).default(null),
+  quantity: int("quantity").notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  unitMrp: decimal("unit_mrp", { precision: 10, scale: 2 }).default(null),
+  unitGstPercent: int("unit_gst_percent").default(18),
+  lineTotal: decimal("line_total", { precision: 10, scale: 2 }).notNull(),
+  lineTax: decimal("line_tax", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+  lineDiscount: decimal("line_discount", { precision: 10, scale: 2 })
+    .notNull()
+    .default(0),
+});
+
+export const payments = mysqlTable("payments", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("order_id").notNull(),
+  provider: varchar("provider", { length: 64 }).default(null),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+  status: varchar("status", { length: 32 }).notNull().default("created"), // created, authorized, paid, failed, refunded
+  txnId: varchar("txn_id", { length: 191 }).default(null),
+  payload: json("payload").default(null),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
