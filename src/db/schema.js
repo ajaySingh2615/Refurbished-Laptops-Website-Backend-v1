@@ -475,3 +475,13 @@ export const payments = mysqlTable("payments", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
+
+// Newsletter subscriptions
+export const newsletterSubscriptions = mysqlTable("newsletter_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 191 }).notNull(),
+  source: varchar("source", { length: 64 }).default("homepage"),
+  ip: varchar("ip", { length: 64 }).default(null),
+  userAgent: varchar("user_agent", { length: 255 }).default(null),
+  subscribedAt: timestamp("subscribed_at").defaultNow(),
+});

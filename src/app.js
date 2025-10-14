@@ -17,6 +17,7 @@ import addressesRoutes from "./routes/addresses.js";
 import invoiceRoutes from "./routes/invoices.js";
 import profileRoutes from "./routes/profile.js";
 import adminOrdersRoutes from "./routes/adminOrders.js";
+import newsletterRoutes from "./routes/newsletter.js";
 import passport from "passport";
 import { configureGoogleStrategy } from "./passport/googleStrategy.js";
 
@@ -45,6 +46,7 @@ app.use("/api/addresses", addressesRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/admin/orders", adminOrdersRoutes);
+app.use("/api/newsletter", newsletterRoutes);
 
 // API auth
 app.use("/api/auth", authRouters);
