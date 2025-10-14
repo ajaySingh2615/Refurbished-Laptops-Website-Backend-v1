@@ -463,38 +463,47 @@ export class CouponService {
       if (!coupon.isActive) {
         return {
           success: false,
-          message: "Coupon is not active",
+          message: `The coupon "${couponCode}" is currently inactive. Please contact support if you believe this is an error.`,
+          code: "COUPON_INACTIVE",
         };
       }
 
       // Check validity dates
       const now = new Date();
-      if (
-        now < new Date(coupon.validFrom) ||
-        now > new Date(coupon.validUntil)
-      ) {
+      const validFrom = new Date(coupon.validFrom);
+      const validUntil = new Date(coupon.validUntil);
+
+      if (now < validFrom) {
         return {
           success: false,
-          message: "Coupon is not valid at this time",
+          message: `This coupon is not yet active. It will be valid from ${validFrom.toLocaleDateString()}.`,
+          code: "COUPON_NOT_STARTED",
         };
       }
 
-      // Check usage limits
+      if (now > validUntil) {
+        return {
+          success: false,
+          message: `This coupon expired on ${validUntil.toLocaleDateString()}. Please try a different coupon.`,
+          code: "COUPON_EXPIRED",
+        };
+      }
+
+      // Check total usage limits
       if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
         return {
           success: false,
-          message: "Coupon usage limit exceeded",
+          message: `This coupon has reached its maximum usage limit (${coupon.usageLimit} uses). Please try a different coupon.`,
+          code: "TOTAL_USAGE_LIMIT_EXCEEDED",
         };
       }
 
-      // Check per-user usage limit (skip when only applying to cart)
-      if (!options?.skipUsageChecks && userId) {
+      // Check per-user usage limit
+      if (!options?.skipUsageChecks && userId && coupon.usageLimitPerUser) {
         console.log(
-          "🔍 Checking usage for user:",
-          userId,
-          "coupon:",
-          coupon.id
+          `🔍 Validating: Checking usage for user ${userId} on coupon ${coupon.code} (ID: ${coupon.id})`
         );
+
         const userUsage = await db
           .select({ count: sql`count(*)` })
           .from(couponUsage)
@@ -505,38 +514,50 @@ export class CouponService {
             )
           );
 
+        const usageCount = userUsage[0]?.count || 0;
+
         console.log(
-          "📊 User usage count:",
-          userUsage[0].count,
-          "limit:",
-          coupon.usageLimitPerUser
+          `📊 User ${userId} has used coupon ${coupon.code}: ${usageCount}/${coupon.usageLimitPerUser} times`
         );
-        if (userUsage[0].count >= coupon.usageLimitPerUser) {
+
+        if (usageCount >= coupon.usageLimitPerUser) {
           return {
             success: false,
-            message: "You have already used this coupon",
+            message: `You have already used this coupon ${usageCount} time(s). Each user can use this coupon up to ${coupon.usageLimitPerUser} time(s).`,
+            code: "USER_LIMIT_EXCEEDED",
           };
         }
-      } else if (!options?.skipUsageChecks) {
-        console.log("⚠️ No userId provided, checking session usage");
-        if (sessionId) {
-          const sessionUsage = await db
-            .select({ count: sql`count(*)` })
-            .from(couponUsage)
-            .where(
-              and(
-                eq(couponUsage.couponId, coupon.id),
-                eq(couponUsage.sessionId, sessionId)
-              )
-            );
+      } else if (
+        !options?.skipUsageChecks &&
+        sessionId &&
+        coupon.usageLimitPerUser
+      ) {
+        console.log(
+          `🔍 Validating: Checking session usage for ${sessionId} on coupon ${coupon.code}`
+        );
 
-          console.log("📊 Session usage count:", sessionUsage[0].count);
-          if (sessionUsage[0].count >= coupon.usageLimitPerUser) {
-            return {
-              success: false,
-              message: "You have already used this coupon",
-            };
-          }
+        const sessionUsage = await db
+          .select({ count: sql`count(*)` })
+          .from(couponUsage)
+          .where(
+            and(
+              eq(couponUsage.couponId, coupon.id),
+              eq(couponUsage.sessionId, sessionId)
+            )
+          );
+
+        const usageCount = sessionUsage[0]?.count || 0;
+
+        console.log(
+          `📊 Session ${sessionId} has used coupon ${coupon.code}: ${usageCount}/${coupon.usageLimitPerUser} times`
+        );
+
+        if (usageCount >= coupon.usageLimitPerUser) {
+          return {
+            success: false,
+            message: `This coupon has already been used the maximum number of times (${coupon.usageLimitPerUser}) from your session.`,
+            code: "SESSION_LIMIT_EXCEEDED",
+          };
         }
       }
 
@@ -558,12 +579,17 @@ export class CouponService {
 
       // Check minimum order amount
       const cartSubtotal = parseFloat(cartData.subtotal);
-      const minOrderAmount = parseFloat(coupon.minOrderAmount);
+      const minOrderAmount = parseFloat(coupon.minOrderAmount || 0);
 
-      if (cartSubtotal < minOrderAmount) {
+      if (minOrderAmount > 0 && cartSubtotal < minOrderAmount) {
+        const shortfall = minOrderAmount - cartSubtotal;
         return {
           success: false,
-          message: `Minimum order amount of ₹${minOrderAmount} required`,
+          message: `This coupon requires a minimum order of ₹${minOrderAmount.toFixed(2)}. Add ₹${shortfall.toFixed(2)} more to your cart to use this coupon.`,
+          code: "MINIMUM_ORDER_NOT_MET",
+          required: minOrderAmount,
+          current: cartSubtotal,
+          shortfall: shortfall,
         };
       }
 
@@ -581,15 +607,20 @@ export class CouponService {
       if (existingCoupon.length > 0) {
         if (options?.allowAlreadyApplied) {
           // Idempotent success when the same coupon is already on the cart
+          console.log(
+            `ℹ️ Coupon ${coupon.code} is already applied to cart ${cartId}`
+          );
           return {
             success: true,
             data: coupon,
-            message: "Coupon already applied to cart",
+            message: "This coupon is already applied to your cart.",
+            code: "ALREADY_APPLIED",
           };
         }
         return {
           success: false,
-          message: "Coupon already applied to cart",
+          message: `The coupon "${coupon.code}" is already applied to your cart.`,
+          code: "ALREADY_APPLIED",
         };
       }
 
@@ -606,8 +637,36 @@ export class CouponService {
             .join(", ");
           return {
             success: false,
-            message: `This coupon cannot be used with other coupons. Please remove the existing coupon(s): ${appliedCouponCodes}`,
+            message: `The coupon "${coupon.code}" cannot be combined with other coupons. Please remove "${appliedCouponCodes}" first to use this coupon.`,
+            code: "NOT_STACKABLE",
+            conflictingCoupons: appliedCouponCodes,
           };
+        }
+      }
+
+      // Check if other non-stackable coupons are already applied
+      const appliedCoupons = await db
+        .select()
+        .from(cartCoupons)
+        .where(eq(cartCoupons.cartId, cartId));
+
+      if (appliedCoupons.length > 0) {
+        // Check if any applied coupon is non-stackable
+        for (const appliedCoupon of appliedCoupons) {
+          const [existingCouponData] = await db
+            .select()
+            .from(coupons)
+            .where(eq(coupons.id, appliedCoupon.couponId))
+            .limit(1);
+
+          if (existingCouponData && !existingCouponData.stackable) {
+            return {
+              success: false,
+              message: `Your cart already has the coupon "${existingCouponData.code}" which cannot be combined with other coupons. Please remove it first.`,
+              code: "EXISTING_NON_STACKABLE",
+              conflictingCoupon: existingCouponData.code,
+            };
+          }
         }
       }
 
@@ -659,19 +718,74 @@ export class CouponService {
     sessionId = null
   ) {
     try {
-      // Validate coupon first
+      // Step 1: Validate coupon with basic checks (date, active, min amount, etc.)
       const validation = await this.validateCoupon(
         couponCode,
         cartId,
         userId,
         sessionId,
-        { skipUsageChecks: true, allowAlreadyApplied: true }
+        { skipUsageChecks: false, allowAlreadyApplied: true }
       );
       if (!validation.success) {
         return validation;
       }
 
       const coupon = validation.data;
+
+      // Step 2: CRITICAL - Check per-user usage limit before applying
+      // This is our last line of defense against coupon abuse
+      if (userId && coupon.usageLimitPerUser) {
+        console.log(
+          `🔒 SECURITY CHECK: Verifying usage limit for user ${userId} on coupon ${coupon.code}`
+        );
+
+        const userUsageRecords = await db
+          .select({ count: sql`count(*)` })
+          .from(couponUsage)
+          .where(
+            and(
+              eq(couponUsage.couponId, coupon.id),
+              eq(couponUsage.userId, userId)
+            )
+          );
+
+        const userUsageCount = userUsageRecords[0]?.count || 0;
+
+        console.log(
+          `📊 User ${userId} has used coupon ${coupon.code} ${userUsageCount} time(s). Limit: ${coupon.usageLimitPerUser}`
+        );
+
+        if (userUsageCount >= coupon.usageLimitPerUser) {
+          return {
+            success: false,
+            message: `You have already used this coupon ${userUsageCount} time(s). This coupon can only be used ${coupon.usageLimitPerUser} time(s) per user.`,
+            code: "USAGE_LIMIT_EXCEEDED",
+          };
+        }
+      }
+
+      // Step 3: Check session-based usage for guest users
+      if (!userId && sessionId && coupon.usageLimitPerUser) {
+        const sessionUsageRecords = await db
+          .select({ count: sql`count(*)` })
+          .from(couponUsage)
+          .where(
+            and(
+              eq(couponUsage.couponId, coupon.id),
+              eq(couponUsage.sessionId, sessionId)
+            )
+          );
+
+        const sessionUsageCount = sessionUsageRecords[0]?.count || 0;
+
+        if (sessionUsageCount >= coupon.usageLimitPerUser) {
+          return {
+            success: false,
+            message: `This coupon has already been used from your session. Limit: ${coupon.usageLimitPerUser} time(s) per user.`,
+            code: "USAGE_LIMIT_EXCEEDED",
+          };
+        }
+      }
 
       // Calculate discount amount
       const cart = await db
@@ -779,6 +893,7 @@ export class CouponService {
   /**
    * Record coupon usage at order placement time.
    * This consumes usage limits and writes to coupon_usage for all coupons on the cart.
+   * CRITICAL: This is the ONLY place where usage should be permanently recorded.
    */
   static async recordUsageForOrder(
     orderId,
@@ -787,6 +902,10 @@ export class CouponService {
     sessionId = null
   ) {
     try {
+      console.log(
+        `📝 Recording coupon usage for order ${orderId}, cart ${cartId}, user ${userId || sessionId}`
+      );
+
       // Get cart totals for recording orderAmount
       const cartRows = await db
         .select()
@@ -794,6 +913,7 @@ export class CouponService {
         .where(eq(carts.id, cartId))
         .limit(1);
       if (cartRows.length === 0) {
+        console.error(`❌ Cart ${cartId} not found`);
         return { success: false, message: "Cart not found" };
       }
       const cartRow = cartRows[0];
@@ -805,11 +925,54 @@ export class CouponService {
         .where(eq(cartCoupons.cartId, cartId));
 
       if (applied.length === 0) {
+        console.log(`ℹ️ No coupons applied to cart ${cartId}`);
         return { success: true, message: "No coupons to record" };
       }
 
+      console.log(
+        `🎫 Found ${applied.length} coupon(s) to record: ${applied.map((c) => c.couponCode).join(", ")}`
+      );
+
       // Record usage for each applied coupon
       for (const cc of applied) {
+        // SECURITY: Double-check usage limit before recording
+        if (userId && cc.couponId) {
+          const couponData = await db
+            .select()
+            .from(coupons)
+            .where(eq(coupons.id, cc.couponId))
+            .limit(1);
+
+          if (couponData.length > 0) {
+            const coupon = couponData[0];
+
+            // Check if user has exceeded limit
+            const existingUsage = await db
+              .select({ count: sql`count(*)` })
+              .from(couponUsage)
+              .where(
+                and(
+                  eq(couponUsage.couponId, cc.couponId),
+                  eq(couponUsage.userId, userId)
+                )
+              );
+
+            const currentUsageCount = existingUsage[0]?.count || 0;
+
+            if (
+              coupon.usageLimitPerUser &&
+              currentUsageCount >= coupon.usageLimitPerUser
+            ) {
+              console.error(
+                `❌ FRAUD ATTEMPT: User ${userId} trying to use coupon ${coupon.code} for the ${currentUsageCount + 1}th time (limit: ${coupon.usageLimitPerUser})`
+              );
+              // Skip recording this fraudulent usage
+              continue;
+            }
+          }
+        }
+
+        // Record the usage
         await db.insert(couponUsage).values({
           couponId: cc.couponId,
           userId,
@@ -820,19 +983,34 @@ export class CouponService {
           orderAmount: cartRow.subtotal,
         });
 
+        console.log(
+          `✅ Recorded usage for coupon ${cc.couponCode} (ID: ${cc.couponId})`
+        );
+
         // Increment coupon usage count
         await db
           .update(coupons)
           .set({ usageCount: sql`${coupons.usageCount} + 1` })
           .where(eq(coupons.id, cc.couponId));
+
+        console.log(`📈 Incremented usage count for coupon ${cc.couponCode}`);
       }
 
-      // Clear coupons from cart after successful recording
-      await db.delete(cartCoupons).where(eq(cartCoupons.cartId, cartId));
+      // CRITICAL: Clear coupons from cart after successful recording
+      // This prevents double-usage on cart reuse
+      const deletedCount = await db
+        .delete(cartCoupons)
+        .where(eq(cartCoupons.cartId, cartId));
 
-      return { success: true };
+      console.log(`🧹 Cleared ${applied.length} coupon(s) from cart ${cartId}`);
+
+      return {
+        success: true,
+        recordedCount: applied.length,
+        message: `Successfully recorded ${applied.length} coupon usage(s)`,
+      };
     } catch (error) {
-      console.error("Error recording coupon usage for order:", error);
+      console.error("❌ Error recording coupon usage for order:", error);
       return {
         success: false,
         message: "Failed to record coupon usage",
