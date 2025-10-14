@@ -253,6 +253,7 @@ export const filterProducts = async (req, res) => {
       storage,
       subType,
       inStock,
+      processor,
       sortBy,
       sortOrder,
       page = 1,
@@ -341,6 +342,18 @@ export const filterProducts = async (req, res) => {
         });
         where.push(or(...likes));
       }
+    }
+
+    // Processor filter (filters by CPU field)
+    if (processor) {
+      const processorType = String(processor).toLowerCase().trim();
+      if (processorType === "intel") {
+        where.push(like(products.cpu, "%Intel%"));
+      } else if (processorType === "amd") {
+        where.push(like(products.cpu, "%AMD%"));
+      }
+      // Note: For Apple processors, we filter by brand=apple instead
+      // since Apple uses both Intel and Apple Silicon (M1/M2/M3)
     }
 
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
