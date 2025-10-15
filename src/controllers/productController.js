@@ -1,5 +1,5 @@
 import { db } from "../db/client.js";
-import { products, productVariants } from "../db/schema.js";
+import { products, productVariants, categories } from "../db/schema.js";
 import { eq, like, and, or, gte, lte, inArray, sql } from "drizzle-orm";
 
 export const getAllProducts = async (req, res) => {
@@ -254,6 +254,7 @@ export const filterProducts = async (req, res) => {
       subType,
       inStock,
       processor,
+      categoryId, // New: category filter
       sortBy,
       sortOrder,
       page = 1,
@@ -354,6 +355,25 @@ export const filterProducts = async (req, res) => {
       }
       // Note: For Apple processors, we filter by brand=apple instead
       // since Apple uses both Intel and Apple Silicon (M1/M2/M3)
+    }
+
+    // Category filter (includes parent category and all its children)
+    if (categoryId) {
+      const catId = parseInt(categoryId, 10);
+      if (!isNaN(catId)) {
+        // Fetch all categories to find children
+        const allCategories = await db.select().from(categories);
+        const childIds = allCategories
+          .filter((c) => c.parentId === catId)
+          .map((c) => c.id);
+        const categoryIds = [catId, ...childIds];
+
+        if (categoryIds.length === 1) {
+          where.push(eq(products.categoryId, categoryIds[0]));
+        } else {
+          where.push(inArray(products.categoryId, categoryIds));
+        }
+      }
     }
 
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
