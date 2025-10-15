@@ -254,7 +254,8 @@ export const filterProducts = async (req, res) => {
       subType,
       inStock,
       processor,
-      categoryId, // New: category filter
+      categoryId, // Legacy: category ID filter
+      category, // New: category slug filter
       sortBy,
       sortOrder,
       page = 1,
@@ -367,6 +368,27 @@ export const filterProducts = async (req, res) => {
           .filter((c) => c.parentId === catId)
           .map((c) => c.id);
         const categoryIds = [catId, ...childIds];
+
+        if (categoryIds.length === 1) {
+          where.push(eq(products.categoryId, categoryIds[0]));
+        } else {
+          where.push(inArray(products.categoryId, categoryIds));
+        }
+      }
+    }
+
+    // Category slug filter (includes parent category and all its children)
+    if (category) {
+      // Fetch all categories to find the category by slug
+      const allCategories = await db.select().from(categories);
+      const targetCategory = allCategories.find((c) => c.slug === category);
+
+      if (targetCategory) {
+        // Find all child categories
+        const childIds = allCategories
+          .filter((c) => c.parentId === targetCategory.id)
+          .map((c) => c.id);
+        const categoryIds = [targetCategory.id, ...childIds];
 
         if (categoryIds.length === 1) {
           where.push(eq(products.categoryId, categoryIds[0]));
